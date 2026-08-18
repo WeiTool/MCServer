@@ -1,0 +1,20 @@
+/* 移除 html 的背景色和文字颜色（继承body设置） */
+html {
+    text-align: center;
+}
+
+body {
+    margin: 0;
+    background-color: #ffffff;  /* 设置白色背景 */
+    color: #333333;             /* 深色文字，保证在白色背景上清晰 */
+    font-family: "Nunito", -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto",
+        "Oxygen", "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", 
+        "Helvetica Neue", sans-serif;
+}
+
+#app {
+    height: 100vh;
+    text-align: center;
+    /* 如需确保#app内也为白底，可加： */
+    background-color: #ffffff;
+}

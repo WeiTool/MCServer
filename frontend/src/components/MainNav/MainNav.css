@@ -1,0 +1,149 @@
+/* ===== 导航容器 ===== */
+.main-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2rem;
+  background: rgba(20, 20, 35, 0.65);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  height: 60px;
+  width: 100%;
+  box-sizing: border-box;
+  user-select: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+  position: relative;
+  z-index: 100;
+}
+
+/* ===== 窗口拖拽样式 ===== */
+.window-draggable {
+  --wails-draggable: drag;
+  -webkit-app-region: drag;
+  cursor: default;
+}
+
+.window-draggable .nav-item,
+.window-draggable .buttons button {
+  --wails-draggable: none;
+  -webkit-app-region: no-drag;
+  cursor: pointer;
+}
+
+/* ===== Logo ===== */
+.logo p {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+  letter-spacing: 0.5px;
+}
+
+/* ===== 导航菜单 ===== */
+.nav-menu {
+  display: flex;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  align-items: center;
+  gap: 4px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 20px;
+  height: 100%;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 0;
+  background-color: transparent;
+  letter-spacing: 0.3px;
+  position: relative;
+}
+
+.nav-item:hover {
+  color: rgba(255, 255, 255, 0.9);
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.nav-item.active {
+  color: #ffffff;
+  border-bottom-color: #4a9eff;
+  background-color: rgba(74, 158, 255, 0.08);
+}
+
+/* 激活指示器动画 */
+.nav-item.active::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 20px;
+  height: 3px;
+  background: #4a9eff;
+  border-radius: 2px;
+  animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+  from {
+    width: 0;
+    opacity: 0;
+  }
+  to {
+    width: 20px;
+    opacity: 1;
+  }
+}
+
+/* ===== 右侧按钮组 ===== */
+.buttons {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.buttons button {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 1.4rem;
+  line-height: 1;
+  padding: 0;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-weight: 300;
+}
+
+/* 最小化按钮 */
+.min-btn:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  transform: scale(1.05);
+}
+
+/* 关闭按钮 */
+.close-btn:hover {
+  background-color: #e81123;
+  color: #ffffff;
+  transform: scale(1.05);
+}
+
+.buttons button:active {
+  transform: scale(0.92);
+}

@@ -1,0 +1,384 @@
+/* ===== 无活动服务器时的提示 ===== */
+.console-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  height: calc(100vh - 60px);
+  color: #999999;
+  background: #ffffff;
+  border-radius: 16px;
+  border: 1px dashed #d0d0d0;
+  margin: 16px;
+}
+
+.console-empty-icon {
+  font-size: 40px;
+}
+
+.console-empty-text {
+  font-size: 14px;
+}
+
+/* ===== 控制台页面整体布局 ===== */
+.console-page {
+  display: flex;
+  gap: 16px;
+  padding: 16px;
+  height: calc(100vh - 60px);
+  box-sizing: border-box;
+  background: #f5f5f5;
+}
+
+/* ===== 左侧面板 ===== */
+.left-panel {
+  width: 200px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.info-card {
+  flex: 1;
+  background: #ffffff;
+  border-radius: 12px;
+  border: 1px solid #e0e0e0;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+  padding: 20px 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-evenly;
+}
+
+.info-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.info-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+}
+
+.info-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.info-label {
+  font-size: 13px;
+  color: #666666;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.info-value {
+  font-size: 17px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* ===== 中间终端区域 ===== */
+.center-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.terminal-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: #0d0d0d;
+  border-radius: 12px;
+  border: 1px solid #333333;
+  overflow: hidden;
+}
+
+/* 终端顶部当前服务器信息栏 */
+.terminal-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: #1a1a1a;
+  border-bottom: 1px solid #333333;
+  color: #4a9eff;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.terminal-current-server {
+  color: #e0e0e0;
+  font-weight: 500;
+}
+
+.terminal-screen {
+  flex: 1;
+  padding: 16px 20px;
+  overflow-y: auto;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #e0e0e0;
+  /* 强制内容顶部对齐，不居中 */
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: flex-start;
+  /* 隐藏滚动条（Firefox / IE） */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+/* 隐藏滚动条（Webkit/Chrome/Edge/Wails WebView） */
+.terminal-screen::-webkit-scrollbar {
+  display: none;
+}
+
+.terminal-line {
+  white-space: pre-wrap;
+  word-break: break-all;
+  /* 占满整行宽度，内容靠左 */
+  width: 100%;
+  text-align: left;
+}
+
+/* INFO 日志：白色 */
+.terminal-line.log-info {
+  color: #e0e0e0;
+}
+
+/* WARNING 日志：黄色 */
+.terminal-line.log-warning {
+  color: #ffd666;
+}
+
+/* ERROR 日志：红色 */
+.terminal-line.log-error {
+  color: #ff6b6b;
+}
+
+/* 命令回显：蓝色 */
+.terminal-line.log-command {
+  color: #4a9eff;
+}
+
+/* 底部命令输入栏：独立白色卡片，与黑色终端隔开 */
+.terminal-input-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: #ffffff;
+  border: 1px solid #e0e0e0;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+  margin-top: 12px;
+}
+
+.command-input {
+  flex: 1;
+  background: #f5f5f5;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 8px 12px;
+  color: #333333;
+  font-size: 13px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.command-input:focus {
+  border-color: #4a9eff;
+  background: #ffffff;
+}
+
+.command-input::placeholder {
+  color: #999999;
+}
+
+.send-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: #4a9eff;
+  border: none;
+  border-radius: 6px;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.send-btn:hover {
+  background: #3a8eef;
+  transform: scale(1.02);
+}
+
+.send-btn:active {
+  transform: scale(0.98);
+}
+
+/* ===== 右侧统一卡片 ===== */
+.side-card {
+  width: 160px;
+  flex-shrink: 0;
+  align-self: stretch;
+  background: #ffffff;
+  border-radius: 12px;
+  border: 1px solid #e0e0e0;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.side-card::-webkit-scrollbar {
+  display: none;
+}
+
+/* 卡片内的区域 */
+.side-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* 区域标题 */
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #333333;
+  padding-bottom: 6px;
+}
+
+/* ===== 内存配置 ===== */
+.memory-config {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed #e8e8e8;
+}
+
+.memory-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.memory-label {
+  font-size: 12px;
+  color: #666666;
+  flex-shrink: 0;
+}
+
+.memory-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  justify-content: flex-end;
+}
+
+.memory-unit {
+  font-size: 12px;
+  color: #999999;
+  flex-shrink: 0;
+}
+
+/* 功能按钮容器 */
+.action-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* 区域分割线 */
+.section-divider {
+  height: 1px;
+  background: #e8e8e8;
+  flex-shrink: 0;
+}
+
+.action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+  background: #f5f5f5;
+  color: #333333;
+  white-space: nowrap;
+}
+
+.action-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.action-btn:active {
+  transform: scale(0.98);
+}
+
+/* 按钮类型样式 */
+.action-btn.primary {
+  background: #4a9eff;
+  color: #ffffff;
+  border-color: #4a9eff;
+}
+
+.action-btn.primary:hover {
+  background: #3a8eef;
+}
+
+.action-btn.danger {
+  background: #ff4d4f;
+  color: #ffffff;
+  border-color: #ff4d4f;
+}
+
+.action-btn.danger:hover {
+  background: #e04040;
+}
+
+.action-btn.warning {
+  background: #ffa940;
+  color: #ffffff;
+  border-color: #ffa940;
+}
+
+.action-btn.warning:hover {
+  background: #e89830;
+}
+
+.action-btn.default:hover {
+  background: #e8e8e8;
+}
