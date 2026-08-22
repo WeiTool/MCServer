@@ -16,8 +16,7 @@ export type JavaInfo = model.JavaInfo
 export async function scanJavaList(): Promise<JavaInfo[]> {
   try {
     return await ScanJavaList() || []
-  } catch (e) {
-    console.error('扫描 Java 失败:', e)
+  } catch {
     return []
   }
 }
@@ -28,8 +27,7 @@ export async function addJavaByDialog(): Promise<JavaInfo | null> {
     const info = await AddJavaByDialog()
     if (!info || !info.path) return null
     return info
-  } catch (e) {
-    console.error('添加 Java 失败:', e)
+  } catch {
     return null
   }
 }
@@ -39,8 +37,7 @@ export async function setServerJava(serverName: string, executable: string): Pro
   try {
     await SetServerJava(serverName, executable)
     return true
-  } catch (e) {
-    console.error('保存 Java 失败:', e)
+  } catch {
     return false
   }
 }
@@ -62,8 +59,7 @@ export async function setServerMemory(serverName: string, xmxMB: number, xmsMB: 
   try {
     await SetServerMemory(serverName, xmxMB, xmsMB)
     return true
-  } catch (e) {
-    console.error('保存内存失败:', e)
+  } catch {
     return false
   }
 }
@@ -74,7 +70,7 @@ export async function getServerMemory(serverName: string): Promise<[number, numb
     // Wails 多返回值实际为数组
     const res = await GetServerMemory(serverName) as unknown as number[]
     return [res[0] || 0, res[1] || 0]
-  } catch (e) {
+  } catch {
     return [0, 0]
   }
 }

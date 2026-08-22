@@ -4,8 +4,7 @@ import MainNav from './components/MainNav/MainNav.vue'
 </script>
 
 <template>
-  <!-- 需要同时包裹 n-dialog-provider 和 n-message-provider -->
-  <n-dialog-provider>
+  <!-- n-message-provider -->
     <n-message-provider>
       <!-- 顶部导航栏 -->
       <MainNav />
@@ -14,7 +13,6 @@ import MainNav from './components/MainNav/MainNav.vue'
         <router-view />
       </div>
     </n-message-provider>
-  </n-dialog-provider>
 </template>
 
 <style>

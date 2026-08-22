@@ -17,6 +17,12 @@ const routes = [
         name: 'console',
         component: () => import('../components/Terminal/Terminal.vue'),
     },
+    {
+        // 设置（懒加载）
+        path: '/settings',
+        name: 'settings',
+        component: () => import('../components/Settings/settings.vue'),
+    }
 ]
 
 // 创建路由实例

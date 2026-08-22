@@ -26,8 +26,6 @@ export namespace model {
 	    jarFiles: string[];
 	    hasEula: boolean;
 	    eulaAgreed: boolean;
-	    isRunning: boolean;
-	    pid: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new ServerInstance(source);
@@ -42,8 +40,6 @@ export namespace model {
 	        this.jarFiles = source["jarFiles"];
 	        this.hasEula = source["hasEula"];
 	        this.eulaAgreed = source["eulaAgreed"];
-	        this.isRunning = source["isRunning"];
-	        this.pid = source["pid"];
 	    }
 	}
 	export class ServerListResult {

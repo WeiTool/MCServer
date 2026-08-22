@@ -15,8 +15,7 @@ import type { model } from '../../wailsjs/go/models'
 export async function fetchServerList(): Promise<model.ServerListResult | null> {
   try {
     return await GetServerList()
-  } catch (e) {
-    console.error('获取服务器列表失败:', e)
+  } catch {
     return null
   }
 }
@@ -26,8 +25,7 @@ export async function setActiveServer(name: string): Promise<boolean> {
   try {
     await SetActiveServer(name)
     return true
-  } catch (e) {
-    console.error('设置当前服务器失败:', e)
+  } catch {
     return false
   }
 }
@@ -36,8 +34,7 @@ export async function setActiveServer(name: string): Promise<boolean> {
 export async function fetchActiveServer(): Promise<string> {
   try {
     return await GetActiveServer() || ''
-  } catch (e) {
-    console.error('获取当前服务器失败:', e)
+  } catch {
     return ''
   }
 }
@@ -46,8 +43,7 @@ export async function fetchActiveServer(): Promise<string> {
 export async function fetchServerModCount(serverName: string): Promise<number> {
   try {
     return (await GetServerModCount(serverName)) || 0
-  } catch (e) {
-    console.error('获取 mod 数量失败:', e)
+  } catch {
     return 0
   }
 }
@@ -56,8 +52,7 @@ export async function fetchServerModCount(serverName: string): Promise<number> {
 export async function fetchServerPluginCount(serverName: string): Promise<number> {
   try {
     return (await GetServerPluginCount(serverName)) || 0
-  } catch (e) {
-    console.error('获取插件数量失败:', e)
+  } catch {
     return 0
   }
 }
@@ -67,8 +62,7 @@ export async function fetchServerPluginCount(serverName: string): Promise<number
 export async function fetchServerType(serverName: string): Promise<string> {
   try {
     return (await GetServerType(serverName)) || ''
-  } catch (e) {
-    console.error('获取服务器类型失败:', e)
+  } catch {
     return ''
   }
 }
@@ -78,8 +72,7 @@ export async function fetchServerType(serverName: string): Promise<string> {
 export async function fetchServerVersion(serverName: string): Promise<string> {
   try {
     return (await GetServerVersion(serverName)) || ''
-  } catch (e) {
-    console.error('获取服务器版本失败:', e)
+  } catch {
     return ''
   }
 }

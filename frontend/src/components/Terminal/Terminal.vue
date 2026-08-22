@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 模板所需图标（图标仅用于展示，在组件内维护字符串 → 图标组件映射）
-import { Cpu, MemoryStick, Users, Puzzle, Blocks, Clock, Play, Square, RotateCw, FileText, AlertTriangle, Send, FolderOpen, Coffee } from '@lucide/vue'
+import { Cpu, MemoryStick, Users, Puzzle, Blocks, Clock, Play, Power, RotateCw, FileText, AlertTriangle, Send, FolderOpen, Coffee, Trash2 } from '@lucide/vue'
 // ViewModel：控制台逻辑
 import { useTerminal } from './Terminal'
 
@@ -38,10 +38,11 @@ const infoIconMap: Record<string, any> = {
 // 右侧功能按钮图标映射（按 icon 标识）
 const actionIconMap: Record<string, any> = {
   play: Play,
-  square: Square,
+  power: Power,
   rotate: RotateCw,
   file: FileText,
   alert: AlertTriangle,
+  trash: Trash2,
 }
 
 // 解析左侧面板图标（保持 infoItems 的响应式，通过函数映射）
@@ -91,12 +92,9 @@ function resolveActionIcon(icon: string) {
           </span>
         </div>
         <div ref="terminalScreenRef" class="terminal-screen">
-          <div
-            v-for="(line, i) in terminalLines"
-            :key="i"
-            class="terminal-line"
-            :class="`log-${line.level}`"
-          >
+          <!-- v-memo：内容未变的日志行跳过重渲染，10000 行上限下追加日志只渲染新增行 -->
+          <div v-for="(line, i) in terminalLines" :key="i" v-memo="[line.text, line.level]"
+            class="terminal-line" :class="`log-${line.level}`">
             {{ line.text }}
           </div>
         </div>

@@ -1,203 +1,428 @@
 // ViewModel：首页看板逻辑（组合式函数）
-import type { Component } from "vue";
-import { ref, onMounted, onBeforeUnmount } from "vue";
+import { ref, computed, onMounted, onBeforeUnmount } from "vue";
+import { useMessage } from "naive-ui";
 import { useRouter } from "vue-router";
 import { EventsOn, EventsOff } from "../../../wailsjs/runtime/runtime";
-import {
-  Server,
-  Gamepad,
-  Power,
-  RotateCw,
-  Play,
-  TerminalSquare,
-} from "@lucide/vue";
-import Froge from "../../assets/versionIcon/froge.png";
-import Fabric from "../../assets/versionIcon/fabric.png";
-// ViewModel：活动服务器共享状态
 import { useActiveServer } from "../../composables/useActiveServer";
-// Model：服务器与进程 API
+import { useServerControl } from "../../composables/useServerControl";
 import { serverApi, processApi } from "../../api";
+import { formatUptime } from "../../utils/formatUptime.js";
+import { GetPlayerList } from "../../../wailsjs/go/main/App";
+import type { GcPoint } from "../base/GcChart/GcChart";
 
-type IconType = Component | string;
+// ============================================================
+//  类型定义
+// ============================================================
 
-// 定义内存信息接口
-interface MemoryInfo {
+/** 系统内存信息（由后端每 2 秒推送） */
+export interface SystemInfo {
+  /** 当前内存使用率（百分比，0-100） */
   usagePercent: number;
 }
 
-// 定义服务器实例接口
-type ServerInstance = {
+/** 后端推送的 GC 统计（对应 model.GcStats） */
+export interface GcStatsPayload {
+  /** 年轻代 GC 次数 */
+  ygc: number;
+  /** Full GC 次数 */
+  fgc: number;
+  /** GC 总耗时（秒） */
+  gct: number;
+}
+
+/** 后端推送的磁盘读写速率（对应 model.IoStats，单位字节/秒） */
+export interface IoStatsPayload {
+  /** 磁盘读取速率（字节/秒） */
+  readBytesPerSec: number;
+  /** 磁盘写入速率（字节/秒） */
+  writeBytesPerSec: number;
+}
+
+/** 服务器实例（首页卡片展示的数据结构） */
+export type ServerInstance = {
+  /** 服务器显示名称 */
   name: string;
+  /** 服务器文件夹绝对路径 */
   path: string;
+  /** 是否包含有效的 jar 文件 */
   hasJar: boolean;
+  /** jar 文件数量 */
   jarCount: number;
+  /** jar 文件名列表 */
   jarFiles: string[];
-  isRunning: boolean;
-  pid: number;
 };
 
-/**
- * useDashboard
- * 首页看板业务逻辑。返回模板所需的状态与方法。
- */
+// ============================================================
+//  核心业务逻辑
+// ============================================================
+
 export function useDashboard() {
-  // 服务器类型（由后端检测后写入 json，响应式）
-  const currentType = ref("");
+  // ---------- 生命周期钩子 ----------
+  onMounted(async () => {
+    // 1. 注册后端事件监听
+    EventsOn("memory:update", handleMemoryUpdate);
+    EventsOn("cpu:update", handleCPUUpdate);
+    EventsOn("server:type", handleTypeUpdate);
+    EventsOn("gc:update", handleGCUpdate);
+    EventsOn("jvm:update", handleJvmUpdate);
+    EventsOn("io:update", handleIOUpdate);
 
-  // 服务器版本（由后端检测后写入 json，响应式）
-  const currentVersion = ref("");
+    // 2. 初始化数据（并行加载，提升性能）
+    await Promise.all([loadServerList(), loadActiveServer()]);
 
-  // 服务器运行时长（秒，每秒从后端刷新，响应式）
-  const uptime = ref(0);
+    // 3. 活动服务器加载完成后，加载其详细信息
+    await Promise.all([
+      loadExtensionsCount(),
+      loadTypeAndVersion(),
+      refreshUptime(),
+      // 加载玩家信息
+      refreshPlayerList(),
+    ]);
 
-  // 模组数量
-  const modCount = ref(0);
+    // 4. 启动运行时长轮询（每秒刷新）
+    uptimeTimer = setInterval(refreshUptime, 1000);
 
-  // 插件数量
-  const pluginCount = ref(0);
+    // 启动玩家信息轮询（每10秒刷新）
+    playerTimer = setInterval(refreshPlayerList, 10000);
 
-  // 加载当前服务器的 mod 与插件数量（调用 serverApi）
-  async function loadExtensionsCount() {
-    if (!currentServer.value) {
-      modCount.value = 0;
-      pluginCount.value = 0;
-      return;
+    // 监听窗口可见性变化
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    // 监听窗口焦点变化
+    window.addEventListener('focus', handleWindowFocus);
+    window.addEventListener('blur', handleWindowBlur);
+  });
+
+  onBeforeUnmount(() => {
+    // 清理事件监听，防止内存泄漏
+    EventsOff("memory:update");
+    EventsOff("server:type");
+    EventsOff("gc:update");
+    EventsOff("jvm:update");
+    EventsOff("io:update");
+
+    // 清理定时器
+    if (uptimeTimer) {
+      clearInterval(uptimeTimer);
+      uptimeTimer = null;
     }
-    // 分别获取 mod 与插件数量
-    modCount.value = await serverApi.fetchServerModCount(currentServer.value);
-    pluginCount.value = await serverApi.fetchServerPluginCount(
-      currentServer.value,
-    );
+    if (playerTimer) {
+      clearInterval(playerTimer);
+      playerTimer = null;
+    }
+
+    //  清理事件监听
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
+    window.removeEventListener('focus', handleWindowFocus);
+    window.removeEventListener('blur', handleWindowBlur);
+  });
+
+  // ---------- 共享状态 ----------
+  const { currentServer, hasActiveServer, loadActiveServer, setActiveServer } =
+    useActiveServer();
+
+  const router = useRouter();
+
+  /** 跳转到控制台页面 */
+  function goToConsole() {
+    router.push("/console");
   }
 
-  // 加载当前服务器的类型与版本（从后端 json 读取）
+  // ---------- 服务器进程控制 ----------
+  const message = useMessage();
+  const { startServer, stopServer, restartServer } = useServerControl();
+
+  /** 启动当前服务器，完成后主动重新拉取 mod/插件数量 */
+  async function handleStart() {
+    const result = await startServer();
+    message[result.ok ? "success" : "error"](
+      result.ok ? "服务器已启动" : `启动失败：${result.message}`,
+    );
+    if (result.ok) {
+      await loadExtensionsCount();
+      await refreshPlayerList(); //  启动后刷新玩家信息
+    }
+  }
+
+  /** 停止当前服务器，完成后主动重新拉取 mod/插件数量 */
+  async function handleStop() {
+    const ok = await stopServer();
+    message[ok ? "success" : "error"](ok ? "服务器已停止" : "停止失败");
+    if (ok) {
+      await loadExtensionsCount();
+      // 停止后清空玩家列表
+      playerList.value = [];
+    }
+  }
+
+  /** 重启当前服务器 */
+  async function handleRestart() {
+    const result = await restartServer();
+    message[result.ok ? "success" : "error"](
+      result.ok ? "服务器已重启" : `重启失败：${result.message}`,
+    );
+    if (result.ok) {
+      await loadExtensionsCount();
+      await refreshPlayerList(); //  重启后刷新玩家信息
+    }
+  }
+
+  // ---------- 服务器类型与版本 ----------
+  const currentType = ref("");
+  const currentVersion = ref("");
+
   async function loadTypeAndVersion() {
     if (!currentServer.value) {
       currentType.value = "";
       currentVersion.value = "";
       return;
     }
-    // 分别获取类型与版本
-    currentType.value = await serverApi.fetchServerType(currentServer.value);
-    currentVersion.value = await serverApi.fetchServerVersion(
-      currentServer.value,
-    );
+    const [type, version] = await Promise.all([
+      serverApi.fetchServerType(currentServer.value),
+      serverApi.fetchServerVersion(currentServer.value),
+    ]);
+    currentType.value = type;
+    currentVersion.value = version;
   }
 
-  // 服务器列表
+  function handleTypeUpdate(serverType: string) {
+    currentType.value = serverType;
+  }
+
+  // ---------- 服务器运行时长 ----------
+  const uptime = ref(0);
+  let uptimeTimer: ReturnType<typeof setInterval> | null = null;
+
+  async function refreshUptime() {
+    uptime.value = await processApi.fetchServerUptime();
+  }
+
+  // ============================================================
+  //  玩家信息相关
+  // ============================================================
+
+  /** 完整玩家列表（字符串数组） */
+  const playerList = ref<string[]>([]);
+  /** 是否正在加载 */
+  const isLoadingPlayers = ref(false);
+
+  let playerTimer: ReturnType<typeof setInterval> | null = null;
+  // 轮询是否激活（页面可见且有焦点时）
+  const isPollingActive = ref(true);
+
+  /**
+   * 从后端获取玩家信息（使用 GetPlayerList）
+   */
+  async function refreshPlayerList() {
+    // 如果页面不可见或无焦点，跳过查询
+    if (!isPollingActive.value) return;
+    // 没有活动服务器，跳过
+    if (!currentServer.value) return;
+
+    isLoadingPlayers.value = true;
+    try {
+      const players = await GetPlayerList();
+      playerList.value = players || [];
+    } catch {
+      // 查询失败保持原列表，轮询下轮自动恢复
+    } finally {
+      isLoadingPlayers.value = false;
+    }
+  }
+
+  /**
+   * 页面可见性变化处理
+   */
+  function handleVisibilityChange() {
+    if (document.visibilityState === 'visible') {
+      // 页面变为可见，恢复轮询
+      isPollingActive.value = true;
+      // 立即查询一次
+      refreshPlayerList();
+      // 重新启动定时器
+      if (!playerTimer) {
+        playerTimer = setInterval(refreshPlayerList, 10000);
+      }
+    } else {
+      // 页面隐藏，暂停轮询
+      isPollingActive.value = false;
+      if (playerTimer) {
+        clearInterval(playerTimer);
+        playerTimer = null;
+      }
+    }
+  }
+
+  /**
+   * 窗口获得焦点
+   */
+  function handleWindowFocus() {
+    if (document.visibilityState === 'visible') {
+      isPollingActive.value = true;
+      if (!playerTimer) {
+        refreshPlayerList();
+        playerTimer = setInterval(refreshPlayerList, 10000);
+      }
+    }
+  }
+
+  /**
+   * 窗口失去焦点
+   */
+  function handleWindowBlur() {
+    isPollingActive.value = false;
+    if (playerTimer) {
+      clearInterval(playerTimer);
+      playerTimer = null;
+    }
+  }
+
+  // ---------- 模组与插件统计 ----------
+  const modCount = ref(0);
+  const pluginCount = ref(0);
+
+  async function loadExtensionsCount() {
+    if (!currentServer.value) {
+      modCount.value = 0;
+      pluginCount.value = 0;
+      return;
+    }
+    const [mods, plugins] = await Promise.all([
+      serverApi.fetchServerModCount(currentServer.value),
+      serverApi.fetchServerPluginCount(currentServer.value),
+    ]);
+    modCount.value = mods;
+    pluginCount.value = plugins;
+  }
+
+  // ---------- 服务器列表 ----------
   const serverList = ref<ServerInstance[]>([]);
 
-  // 获取服务器列表（Model 层封装）
   async function loadServerList() {
     const res = await serverApi.fetchServerList();
     serverList.value = res?.servers || [];
   }
 
-  // 内存使用率（百分比），由后端主动推送更新
+  // ---------- 系统内存监控 ----------
+  const CPUUsagePercent = ref(0);
+
+  function handleCPUUpdate(cpu: SystemInfo) {
+    if (cpu?.usagePercent !== undefined) {
+      CPUUsagePercent.value = Math.round(cpu.usagePercent);
+    }
+  }
+
   const memoryUsagePercent = ref(0);
 
-  // 活动服务器状态（共享 ViewModel）
-  const { currentServer, hasActiveServer, loadActiveServer, setActiveServer } =
-    useActiveServer();
-
-  // 路由实例（用于跳转到控制台页面）
-  const router = useRouter();
-
-  // 跳转到控制台页面
-  function goToConsole() {
-    router.push("/console");
-  }
-
-  // 版本映射
-  const versionMap: Record<string, IconType> = {
-    Froge: Froge,
-    Fabric: Fabric,
-  };
-
-  function getVersionIcon(version: string): IconType {
-    return versionMap[version] || Server;
-  }
-
-  // 处理后端推送的内存信息
-  function handleMemoryUpdate(mem: MemoryInfo) {
-    if (mem && typeof mem.usagePercent === "number") {
+  function handleMemoryUpdate(mem: SystemInfo) {
+    if (mem?.usagePercent !== undefined) {
       memoryUsagePercent.value = Math.round(mem.usagePercent);
     }
   }
 
-  // 运行时长定时器句柄（用于卸载时清理）
-  let uptimeTimer: ReturnType<typeof setInterval> | null = null;
+  // ---------- JVM GC 统计 ----------
+  // 滚动窗口最多保留 60 个采样点（2 秒推送一次，约 2 分钟）
+  const gcPoints = ref<GcPoint[]>([]);
+  const maxGcPoints = 60;
 
-  // 刷新运行时长（每秒从后端读取精确秒数）
-  async function refreshUptime() {
-    uptime.value = await processApi.fetchServerUptime();
+  function handleGCUpdate(stats: GcStatsPayload) {
+    if (!stats) return;
+    const point: GcPoint = {
+      ygc: stats.ygc || 0,
+      fgc: stats.fgc || 0,
+      gct: stats.gct || 0,
+    };
+    // 不可变更新：生成新数组替换旧引用，GcChart 的 watch 才能感知变化并刷新
+    gcPoints.value = [...gcPoints.value, point].slice(-maxGcPoints);
   }
 
-  // 格式化运行时长：秒 -> "Xh Ym" / "Ym Zs" / "Zs"
-  function formatUptime(seconds: number): string {
-    if (seconds <= 0) return "0s";
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = seconds % 60;
-    if (h > 0) return `${h}h ${m}m`;
-    if (m > 0) return `${m}m ${s}s`;
-    return `${s}s`;
-  }
+  // ---------- JVM 内存使用率 ----------
+  // 后端用 GetJVMProcessMemoryUsage 采集（JVM 占系统总内存百分比）
+  const jvmMemoryUsagePercent = ref(0);
 
-  // 接收后端推送的类型更新（检测到类型后）
-  function handleTypeUpdate(serverType: string) {
-    currentType.value = serverType;
-  }
-
-  // 接收后端推送的版本更新（检测到版本后）
-  function handleVersionUpdate(version: string) {
-    currentVersion.value = version;
-  }
-
-  onMounted(async () => {
-    // 订阅内存信息推送（后端每 2 秒推送一次）
-    EventsOn("memory:update", handleMemoryUpdate);
-    // 订阅类型/版本检测完成事件
-    EventsOn("server:type", handleTypeUpdate);
-    EventsOn("server:version", handleVersionUpdate);
-    // 加载服务器列表和当前选中服务器
-    await Promise.all([loadServerList(), loadActiveServer()]);
-    // 活动服务器就绪后，加载其 mod/插件/类型/版本
-    await Promise.all([
-      loadExtensionsCount(),
-      loadTypeAndVersion(),
-      refreshUptime(),
-    ]);
-    // 每秒刷新运行时长
-    uptimeTimer = setInterval(refreshUptime, 1000);
-  });
-
-  onBeforeUnmount(() => {
-    // 组件卸载时取消订阅，避免泄漏
-    EventsOff("memory:update");
-    EventsOff("server:type");
-    EventsOff("server:version");
-    // 清理运行时长定时器
-    if (uptimeTimer) {
-      clearInterval(uptimeTimer);
-      uptimeTimer = null;
+  function handleJvmUpdate(info: SystemInfo) {
+    if (info?.usagePercent !== undefined) {
+      jvmMemoryUsagePercent.value = Math.round(info.usagePercent);
     }
-  });
+  }
+
+  // ---------- 磁盘读写速率 ----------
+  // 后端推送字节/秒，前端转 MB/s 供横向柱状图显示
+  const ioReadMBps = ref(0);
+  const ioWriteMBps = ref(0);
+
+  function handleIOUpdate(stats: IoStatsPayload) {
+    if (!stats) return;
+    ioReadMBps.value = (stats.readBytesPerSec || 0) / 1024 / 1024;
+    ioWriteMBps.value = (stats.writeBytesPerSec || 0) / 1024 / 1024;
+  }
+
+  // ---------- 左侧信息面板 ----------
+  const infoItems = computed(() => [
+    {
+      icon: "server",
+      label: "类型",
+      value: currentType.value || "未知",
+      color: "#4a9eff",
+    },
+    {
+      icon: "gamepad",
+      label: "版本",
+      value: currentVersion.value || "未知",
+      color: "#36cfc9",
+    },
+    {
+      icon: "clock",
+      label: "运行时长",
+      value: formatUptime(uptime.value),
+      color: "#73d13d",
+    },
+    {
+      icon: "puzzle",
+      label: "模组数量",
+      value: String(modCount.value),
+      color: "#ff6b6b",
+    },
+    {
+      icon: "blocks",
+      label: "插件数量",
+      value: String(pluginCount.value),
+      color: "#b37feb",
+    },
+  ]);
+
+  // ============================================================
+  //  对外暴露
+  // ============================================================
 
   return {
+    // 系统状态
     memoryUsagePercent,
+    CPUUsagePercent,
+    jvmMemoryUsagePercent,
+    ioReadMBps,
+    ioWriteMBps,
+
+    // 服务器列表与选择
     serverList,
     currentServer,
     hasActiveServer,
-    currentType,
-    currentVersion,
-    uptime,
-    formatUptime,
-    getVersionIcon,
+    setActiveServer,
+
+    // 信息面板（统一数据驱动）
+    infoItems,
+
+    // GC 折线图数据
+    gcPoints,
+
+    playerList,
+    isLoadingPlayers,
+    refreshPlayerList,
+
+    // 操作方法
     goToConsole,
     loadServerList,
-    setActiveServer,
-    modCount,
-    pluginCount,
+    handleStart,
+    handleStop,
+    handleRestart,
   };
 }

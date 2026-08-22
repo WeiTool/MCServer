@@ -3,6 +3,8 @@ module MCServer
 go 1.25.0
 
 require (
+	github.com/magiconair/properties v1.18.11
+	github.com/mcstatus-io/mcutil/v4 v4.1.0
 	github.com/shirou/gopsutil/v3 v3.24.5
 	github.com/wailsapp/wails/v2 v2.14.0
 	golang.org/x/text v0.39.0
@@ -30,6 +32,7 @@ require (
 	github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/samber/lo v1.49.1 // indirect
+	github.com/shoenig/go-m1cpu v0.1.6 // indirect
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
 	github.com/tkrajina/go-reflector v0.5.8 // indirect

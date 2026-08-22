@@ -1,5 +1,5 @@
 // Model 层：进程相关 API 封装
-import { StartServer, SendCommand, StopServer, ConfirmSendVersion, GetServerUptime } from '../../wailsjs/go/main/App'
+import { StartServer, SendCommand, StopServer, GetServerUptime } from '../../wailsjs/go/main/App'
 
 // 启动结果：是否成功 + 错误信息（失败时 message 含具体原因）
 export interface StartResult {
@@ -16,7 +16,6 @@ export async function startServer(serverName: string): Promise<StartResult> {
   } catch (e) {
     // 提取 Wails 抛出的错误信息（可能为 Error 或字符串）
     const message = e instanceof Error ? e.message : String(e)
-    console.error('启动服务器失败:', message)
     return { ok: false, message }
   }
 }
@@ -26,8 +25,7 @@ export async function sendCommand(command: string): Promise<boolean> {
   try {
     await SendCommand(command)
     return true
-  } catch (e) {
-    console.error('发送命令失败:', e)
+  } catch {
     return false
   }
 }
@@ -37,19 +35,7 @@ export async function stopServer(): Promise<boolean> {
   try {
     await StopServer()
     return true
-  } catch (e) {
-    console.error('停止服务器失败:', e)
-    return false
-  }
-}
-
-// 用户确认后，通知后端发送 /version 命令以提取版本号
-export async function confirmSendVersion(serverName: string): Promise<boolean> {
-  try {
-    await ConfirmSendVersion(serverName)
-    return true
-  } catch (e) {
-    console.error('发送 /version 失败:', e)
+  } catch {
     return false
   }
 }
@@ -58,8 +44,7 @@ export async function confirmSendVersion(serverName: string): Promise<boolean> {
 export async function fetchServerUptime(): Promise<number> {
   try {
     return (await GetServerUptime()) || 0
-  } catch (e) {
-    console.error('获取运行时长失败:', e)
+  } catch {
     return 0
   }
 }

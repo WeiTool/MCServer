@@ -6,16 +6,24 @@ export function AddJavaByDialog() {
   return window['go']['main']['App']['AddJavaByDialog']();
 }
 
-export function ConfirmSendVersion(arg1) {
-  return window['go']['main']['App']['ConfirmSendVersion'](arg1);
-}
-
 export function GetActiveServer() {
   return window['go']['main']['App']['GetActiveServer']();
 }
 
-export function GetJavaList() {
-  return window['go']['main']['App']['GetJavaList']();
+export function GetJvmPid() {
+  return window['go']['main']['App']['GetJvmPid']();
+}
+
+export function GetMaxPlayers() {
+  return window['go']['main']['App']['GetMaxPlayers']();
+}
+
+export function GetOnlinePlayers() {
+  return window['go']['main']['App']['GetOnlinePlayers']();
+}
+
+export function GetPlayerList() {
+  return window['go']['main']['App']['GetPlayerList']();
 }
 
 export function GetServerJava(arg1) {
@@ -38,6 +46,10 @@ export function GetServerPluginCount(arg1) {
   return window['go']['main']['App']['GetServerPluginCount'](arg1);
 }
 
+export function GetServerProperties(arg1) {
+  return window['go']['main']['App']['GetServerProperties'](arg1);
+}
+
 export function GetServerType(arg1) {
   return window['go']['main']['App']['GetServerType'](arg1);
 }
@@ -50,8 +62,8 @@ export function GetServerVersion(arg1) {
   return window['go']['main']['App']['GetServerVersion'](arg1);
 }
 
-export function SaveJavaList(arg1) {
-  return window['go']['main']['App']['SaveJavaList'](arg1);
+export function SaveLogToFile(arg1, arg2) {
+  return window['go']['main']['App']['SaveLogToFile'](arg1, arg2);
 }
 
 export function ScanJavaList() {
@@ -72,6 +84,10 @@ export function SetServerJava(arg1, arg2) {
 
 export function SetServerMemory(arg1, arg2, arg3) {
   return window['go']['main']['App']['SetServerMemory'](arg1, arg2, arg3);
+}
+
+export function SetServerProperties(arg1, arg2) {
+  return window['go']['main']['App']['SetServerProperties'](arg1, arg2);
 }
 
 export function ShutdownAll() {

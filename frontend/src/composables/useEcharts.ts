@@ -1,7 +1,7 @@
 // ViewModel 层：可复用的 echarts 生命周期管理
 // 封装图表初始化、自适应、销毁与数据更新逻辑，
 // 供 GaugeChart / TpsChart 等所有 echarts 图表组件复用
-import { ref, onMounted, onBeforeUnmount, watch, nextTick, type Ref } from 'vue'
+import { onMounted, onBeforeUnmount, watch, nextTick, type Ref } from 'vue'
 import * as echarts from 'echarts'
 import type { ECharts, EChartsOption } from 'echarts'
 
@@ -37,7 +37,11 @@ export function useEcharts(
         // 容器还没有实际尺寸时跳过（WebView 加载初期布局未完成）
         if (el.clientWidth === 0 || el.clientHeight === 0) return
         // 初始化图表
-        chart = echarts.init(el)
+        // 高 DPI 缩放下强制至少 2x 分辨率渲染（对应 window 包的 DPI 缩放逻辑），
+        // 避免窗口被系统缩放后 canvas 内容发虚、数字与线段模糊
+        chart = echarts.init(el, null, {
+            devicePixelRatio: Math.max(window.devicePixelRatio || 1, 2),
+        })
         // 写入图表配置
         chart.setOption(buildOption())
     }

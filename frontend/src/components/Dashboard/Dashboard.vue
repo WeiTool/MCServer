@@ -1,27 +1,48 @@
 <script setup lang="ts">
-// 模板所需图标（图标仅用于展示，不属于业务逻辑，故在组件内导入）
-import { Puzzle, Blocks, List, AlarmClock, Gamepad, Power, RotateCw, Play, TerminalSquare, Folder, RefreshCw } from '@lucide/vue'
+// 模板所需图标（图标仅用于展示，在组件内维护字符串 → 图标组件映射）
+import { Puzzle, Blocks, List, AlarmClock, Gamepad, Power, RotateCw, Play, TerminalSquare, Folder, RefreshCw, Server, User } from '@lucide/vue'
 import GaugeChart from '../base/GaugeChart/GaugeChart.vue'
-import TpsChart from '../base/TpsChart/TpsChart.vue'
+import GcChart from '../base/GcChart/GcChart.vue'
+import IoChart from '../base/IoChart/IoChart.vue'
 // ViewModel：首页看板逻辑
 import { useDashboard } from './Dashboard'
 
 const {
     memoryUsagePercent,
+    CPUUsagePercent,
+    jvmMemoryUsagePercent,
+    ioReadMBps,
+    ioWriteMBps,
     serverList,
     currentServer,
     hasActiveServer,
-    currentType,
-    currentVersion,
-    uptime,
-    formatUptime,
-    getVersionIcon,
     goToConsole,
     loadServerList,
     setActiveServer,
-    modCount,
-    pluginCount,
+    handleStart,
+    handleStop,
+    handleRestart,
+    infoItems,
+    gcPoints,
+    playerList,
+    isLoadingPlayers,
+    refreshPlayerList,
 } = useDashboard()
+
+// 左侧信息面板图标映射（字符串 → 组件）
+const infoIconMap: Record<string, any> = {
+    server: Server,
+    gamepad: Gamepad,
+    clock: AlarmClock,
+    puzzle: Puzzle,
+    blocks: Blocks,
+    user: User,
+}
+
+// 解析左侧面板图标（保持 infoItems 的响应式，通过函数映射）
+function resolveInfoIcon(name: string) {
+    return infoIconMap[name] || Server
+}
 </script>
 <style scoped src="./Dashboard.css"></style>
 
@@ -29,55 +50,21 @@ const {
     <div class="dashboard-container">
         <!-- 左侧区域 -->
         <div class="left-wrapper">
-            <!-- 左上信息卡片 -->
+            <!-- 左上信息卡片：通过 infoItems 数据驱动渲染图标与文字 -->
             <div class="left-info">
-                <!-- 服务器类型 -->
-                <div class="info-item server-version">
-                    <div class="info-icon server-icon">
-                        <img v-if="typeof getVersionIcon(currentType) === 'string'"
-                            :src="getVersionIcon(currentType) as string" />
-                        <component v-else :is="getVersionIcon(currentType)" :size="20" />
+                <div v-for="item in infoItems" :key="item.label" class="info-item stat-item">
+                    <div class="info-icon" :style="{ color: item.color }">
+                        <component :is="resolveInfoIcon(item.icon)" :size="22" />
                     </div>
-                    <span class="info-text">类型:{{ currentType || '未知' }}</span>
-                </div>
-                <!-- Minecraft版本 -->
-                <div class="info-item mc-version">
-                    <div class="info-icon mc-icon">
-                        <Gamepad :size="20" />
+                    <div class="stat-value-wrap">
+                        <span class="stat-label">{{ item.label }}</span>
+                        <span class="stat-value" :style="{ color: item.color }">{{ item.value }}</span>
                     </div>
-                    <span class="info-text">版本:{{ currentVersion || '未知' }}</span>
-                </div>
-                <!-- 运行时长 -->
-                <div class="info-item server-time">
-                    <div class="info-icon">
-                        <AlarmClock :size="20" />
-                    </div>
-                    <span class="info-text">运行时长:{{ formatUptime(uptime) }}</span>
                 </div>
             </div>
 
-            <!-- 左下信息卡片 -->
+            <!-- 左下信息卡片：服务器列表 -->
             <div class="left-bottom-info">
-                <!-- 模组数量 -->
-                <div class="info-item stat-item">
-                    <div class="info-icon">
-                        <Puzzle :size="22" color="#ff6b6b" />
-                    </div>
-                    <div class="stat-value-wrap">
-                        <span class="stat-label">模组数量</span>
-                        <span class="stat-value" style="color:#ff6b6b">{{ modCount }}</span>
-                    </div>
-                </div>
-                <!-- 插件数量 -->
-                <div class="info-item stat-item">
-                    <div class="info-icon">
-                        <Blocks :size="22" color="#b37feb" />
-                    </div>
-                    <div class="stat-value-wrap">
-                        <span class="stat-label">插件数量</span>
-                        <span class="stat-value" style="color:#b37feb">{{ pluginCount }}</span>
-                    </div>
-                </div>
                 <!-- 服务器列表：无滚动条的无极滚动 -->
                 <div class="server-list-block">
                     <div class="info-item server-list">
@@ -116,51 +103,67 @@ const {
                 <div class="performance-box">
                     <!-- CPU 仪表盘 -->
                     <div class="gauge-wrap">
-                        <GaugeChart :value="55" :max="100" color="#4a9eff" height="160px" />
-                        <span class="gauge-title">CPU使用率%</span>
+                        <GaugeChart :value="CPUUsagePercent" :max="100" color="#4a9eff" height="160px" />
+                        <span class="gauge-title">CPU-P核-使用率%</span>
                     </div>
                     <!-- 内存仪表盘 - 使用动态计算的值 -->
                     <div class="gauge-wrap">
                         <GaugeChart :value="memoryUsagePercent" :max="100" color="#36cfc9" height="160px" />
                         <span class="gauge-title">内存使用率%</span>
                     </div>
-                    <!-- 延迟仪表盘 -->
+                    <!-- JVM 内存使用率仪表盘（后端 GetJVMProcessMemoryUsage 采集） -->
                     <div class="gauge-wrap">
-                        <GaugeChart :value="30" :max="200" color="#ffa940" height="160px" />
-                        <span class="gauge-title">延迟</span>
+                        <GaugeChart :value="jvmMemoryUsagePercent" :max="100" color="#ffa940" height="160px" />
+                        <span class="gauge-title">JVM内存使用率%</span>
                     </div>
-                    <!-- GC 仪表盘 -->
+                    <!-- 磁盘读写：2 条横向柱状图（读取/写入），替换原 GC 仪表盘 -->
                     <div class="gauge-wrap">
-                        <GaugeChart :value="85" :max="100" color="#ff6b6b" height="160px" />
-                        <span class="gauge-title">GC频率</span>
+                        <IoChart :read="ioReadMBps" :write="ioWriteMBps" height="160px" />
+                        <span class="gauge-title disk-title">磁盘读写</span>
                     </div>
                 </div>
 
                 <div class="bottom-box">
                     <div class="tps-box">
-                        <span class="tps-title">TPS</span>
-                        <!-- TPS 折线图 -->
-                        <TpsChart :data="[20, 18, 19, 20, 17, 20, 19, 18, 20, 19, 18, 20, 17, 20, 18]" title="TPS"
-                            height="200px" />
+                        <span class="tps-title">GC数据</span>
+                        <!-- YGC/FGC/GCT 三折线图（图例+悬浮提示标明含义） -->
+                        <GcChart :data="gcPoints" height="200px" />
                     </div>
                     <div class="player-box">
-                        <span class="player-title">玩家</span>
-                        <div class="player-placeholder">暂无数据</div>
+                        <div class="player-header">
+                            <span class="player-title">玩家</span>
+                            <span class="player-count">({{ playerList.length }})</span>
+                            <RefreshCw :size="16" class="player-refresh" :class="{ spinning: isLoadingPlayers }"
+                                @click="refreshPlayerList" />
+                        </div>
+
+                        <!-- 无玩家 -->
+                        <div v-if="playerList.length === 0" class="player-empty">
+                            <span>暂无玩家在线</span>
+                        </div>
+
+                        <!-- 3列网格展示玩家 -->
+                        <div v-else class="player-grid">
+                            <div v-for="name in playerList" :key="name" class="player-item">
+                                <User :size="14" class="player-icon" />
+                                <span class="player-name">{{ name }}</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
 
             <!-- 按钮卡片 -->
             <div class="button-card">
-                <button class="action-btn">
+                <button class="action-btn" @click="handleStart">
                     <Play :size="18" />
                     开启
                 </button>
-                <button class="action-btn">
+                <button class="action-btn" @click="handleRestart">
                     <RotateCw :size="18" />
                     重启
                 </button>
-                <button class="action-btn">
+                <button class="action-btn" @click="handleStop">
                     <Power :size="18" />
                     停止
                 </button>

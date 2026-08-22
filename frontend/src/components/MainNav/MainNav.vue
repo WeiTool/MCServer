@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 模板所需图标（仅用于展示，在组件内导入）
-import { LayoutDashboard, TerminalSquare } from '@lucide/vue';
+import { LayoutDashboard, TerminalSquare, Settings } from '@lucide/vue';
 // ViewModel：导航栏逻辑
 import { useMainNav } from './MainNav'
 
@@ -37,6 +37,14 @@ const { activeKey, handleNav, handleMinimize, handleClose } = useMainNav()
       >
         <TerminalSquare />
         <span>控制台</span>
+      </li>
+      <li 
+        class="nav-item" 
+        :class="{ active: activeKey === 'settings' }"
+        @click="handleNav('settings')"
+      >
+        <Settings />
+        <span>设置</span>
       </li>
     </ul>
 

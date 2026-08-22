@@ -5,11 +5,15 @@ import {context} from '../models';
 
 export function AddJavaByDialog():Promise<model.JavaInfo>;
 
-export function ConfirmSendVersion(arg1:string):Promise<void>;
-
 export function GetActiveServer():Promise<string>;
 
-export function GetJavaList():Promise<Array<model.JavaInfo>>;
+export function GetJvmPid():Promise<number>;
+
+export function GetMaxPlayers():Promise<number>;
+
+export function GetOnlinePlayers():Promise<number>;
+
+export function GetPlayerList():Promise<Array<string>>;
 
 export function GetServerJava(arg1:string):Promise<model.JavaInfo>;
 
@@ -21,13 +25,15 @@ export function GetServerModCount(arg1:string):Promise<number>;
 
 export function GetServerPluginCount(arg1:string):Promise<number>;
 
+export function GetServerProperties(arg1:string):Promise<Record<string, string>>;
+
 export function GetServerType(arg1:string):Promise<string>;
 
 export function GetServerUptime():Promise<number>;
 
 export function GetServerVersion(arg1:string):Promise<string>;
 
-export function SaveJavaList(arg1:Array<model.JavaInfo>):Promise<void>;
+export function SaveLogToFile(arg1:string,arg2:string):Promise<string>;
 
 export function ScanJavaList():Promise<Array<model.JavaInfo>>;
 
@@ -38,6 +44,8 @@ export function SetActiveServer(arg1:string):Promise<void>;
 export function SetServerJava(arg1:string,arg2:string):Promise<void>;
 
 export function SetServerMemory(arg1:string,arg2:number,arg3:number):Promise<void>;
+
+export function SetServerProperties(arg1:string,arg2:Record<string, string>):Promise<void>;
 
 export function ShutdownAll():Promise<void>;
 

@@ -1,334 +1,558 @@
 // ViewModel：控制台（终端）业务逻辑（组合式函数）
-import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { useMessage, useDialog, type DropdownOption } from 'naive-ui'
-import { EventsOn, EventsOff } from '../../../wailsjs/runtime/runtime'
-// ViewModel：活动服务器共享状态
-import { useActiveServer } from '../../composables/useActiveServer'
-// Model：Java、进程与服务器 API
-import { javaApi, processApi, serverApi } from '../../api'
-// 工具：日志级别判断
-import { detectLogLevel, type LogLine } from '../../utils/log'
+// 跨路由保留的状态走 Pinia store（stores/terminal.ts），组件卸载不清空 store
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from "vue";
+import { storeToRefs } from "pinia";
+import { useMessage, type DropdownOption } from "naive-ui";
+import { EventsOn, EventsOff } from "../../../wailsjs/runtime/runtime";
+import { GetOnlinePlayers, GetMaxPlayers, SaveLogToFile } from "../../../wailsjs/go/main/App";
+import { useActiveServer } from "../../composables/useActiveServer";
+import { useServerControl } from "../../composables/useServerControl";
+import {
+  useTerminalStore,
+  type JavaInfo,
+  type SystemInfo,
+} from "../../stores/terminal";
+import { javaApi, processApi, serverApi } from "../../api";
+import { detectLogLevel, type LogLine } from "../../utils/log";
+import { formatUptime } from "../../utils/formatUptime.js";
+
+// ============================================================
+//  核心业务逻辑
+// ============================================================
 
 /**
  * useTerminal
  * 控制台（终端）业务逻辑。返回模板所需的所有状态、数据与交互方法。
+ * 跨路由状态由 useTerminalStore 持有，路由切换不清空。
  */
 export function useTerminal() {
-    // naive-ui 消息提示
-    const message = useMessage()
-    // naive-ui 对话框（用于"是否输入 /version"确认）
-    const dialog = useDialog()
+  // ---------- UI 工具 ----------
+  const message = useMessage();
 
-    // Java 版本映射（Java 8 显示 1.8 等，17+ 直接显示 17）
-    function javaDisplayName(java: { path: string; version: number; versionName: string }) {
-        return `Java ${java.version} (${java.versionName})`
+  // ---------- 共享状态 ----------
+  const { currentServer, hasActiveServer, loadActiveServer } =
+    useActiveServer();
+
+  // ---------- Pinia store（跨路由保留的状态） ----------
+  const store = useTerminalStore();
+  // 用 storeToRefs 解构以保持响应式
+  const {
+    terminalLines,
+    modCount,
+    pluginCount,
+    uptime,
+    javaList,
+    selectedJava,
+    xmxGB,
+    xmsGB,
+    cpuUsagePercent,
+    memoryUsagePercent,
+  } = storeToRefs(store);
+
+  // ---------- 组件局部状态（不跨路由） ----------
+  // DOM 引用、定时器实例、单条命令输入框 —— 仍由组件生命周期管理
+  const terminalScreenRef = ref<HTMLElement | null>(null);
+  const commandInput = ref("");
+  let uptimeTimer: ReturnType<typeof setInterval> | null = null;
+
+  // ---------- 生命周期钩子 ----------
+  onMounted(async () => {
+    // 1. 注册后端事件监听（每次挂载都注册，卸载时取消）
+    EventsOn("server:log", handleServerLog);
+    EventsOn("memory:update", handleMemoryUpdate);
+    EventsOn("cpu:update", handleCPUUpdate);
+
+    // 2. 仅首次进入时跑完整初始化链路；路由切回时跳过，复用 store 中已有数据
+    if (!store.isInitialized()) {
+      await loadActiveServer();
+      await Promise.all([
+        loadJavaList(),
+        loadServerJava(),
+        loadServerMemory(),
+        loadModCount(),
+        refreshUptime(),
+      ]);
+      store.markInitialized();
     }
 
-    // 活动服务器状态（共享 ViewModel）
-    const { currentServer, hasActiveServer, loadActiveServer } = useActiveServer()
+    // 3. 启动运行时长轮询（路由切回也会重启）
+    uptimeTimer = setInterval(refreshUptime, 1000);
 
-    // mod 数量（由后端 ServerInfo 统计，动态刷新）
-    const modCount = ref(0)
-    // 插件数量（由后端 ServerInfo 统计，动态刷新）
-    const pluginCount = ref(0)
+    // 4. 玩家信息轮询：仅在本页面可见且窗口聚焦时运行
+    //    最小化/切走/失焦即停止，回到页面再恢复
+    refreshPlayerInfo();
+    startPlayerPolling();
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleWindowFocus);
+    window.addEventListener("blur", handleWindowBlur);
+  });
 
-    // 左侧信息面板数据
-    const infoItems = computed(() => [
-        { icon: 'cpu', label: 'CPU占用', value: '12%', color: '#4a9eff' },
-        { icon: 'memory', label: '内存使用', value: '45%', color: '#36cfc9' },
-        { icon: 'users', label: '在线玩家', value: '3/20', color: '#ffa940' },
-        { icon: 'puzzle', label: '模组数量', value: String(modCount.value), color: '#ff6b6b' },
-        { icon: 'blocks', label: '插件数量', value: String(pluginCount.value), color: '#b37feb' },
-        { icon: 'clock', label: '运行时间', value: '2h 34m', color: '#73d13d' },
-    ])
+  onBeforeUnmount(() => {
+    // 清理事件监听（store 状态保留，不清理）
+    EventsOff("server:log");
+    EventsOff("memory:update");
+    EventsOff("cpu:update");
 
-    onMounted(async () => {
-        // 订阅后端推送的服务器日志与 mod 数量更新、版本检测询问
-        EventsOn('server:log', handleServerLog)
-        EventsOn('server:modcount', handleModCount)
-        EventsOn('server:plugincount', handlePluginCount)
-        EventsOn('server:askversion', handleAskVersion)
-        // 加载活动服务器、Java 列表，再恢复该服务器已配置的 Java 和内存
-        await loadActiveServer()
-        await loadJavaList()
-        await loadServerJava()
-        await loadServerMemory()
-        // 从后端 json 加载当前服务器的 mod 数量
-        await loadModCount()
-    })
+    // 清理定时器
+    if (uptimeTimer) {
+      clearInterval(uptimeTimer);
+      uptimeTimer = null;
+    }
+    stopPlayerPolling();
 
-    onBeforeUnmount(() => {
-        // 组件卸载时取消订阅，避免泄漏
-        EventsOff('server:log')
-        EventsOff('server:modcount')
-        EventsOff('server:plugincount')
-        EventsOff('server:askversion')
-    })
+    document.removeEventListener("visibilitychange", handleVisibilityChange);
+    window.removeEventListener("focus", handleWindowFocus);
+    window.removeEventListener("blur", handleWindowBlur);
+  });
 
-    // 终端输出内容（由后端推送的日志实时填充）
-    const terminalLines = ref<LogLine[]>([])
+  // ---------- Java 版本显示辅助 ----------
+  /**
+   * 生成 Java 的可读显示名称
+   * @example Java 17 (17.0.9) / Java 1.8 (1.8.0_391)
+   */
+  function javaDisplayName(java: JavaInfo): string {
+    return `Java ${java.version} (${java.versionName})`;
+  }
 
-    // 终端滚动容器引用（用于自动滚动到底部）
-    const terminalScreenRef = ref<HTMLElement | null>(null)
+  // ---------- 服务器统计信息 ----------
+  /** 从后端刷新运行时长（秒） */
+  async function refreshUptime() {
+    store.setUptime(await processApi.fetchServerUptime());
+  }
 
-    // 命令输入
-    const commandInput = ref('')
+  /** 从后端加载当前服务器的模组与插件数量（按钮动作完成后主动调用刷新缓存值） */
+  async function loadModCount() {
+    if (!currentServer.value) {
+      store.setModCount(0);
+      store.setPluginCount(0);
+      return;
+    }
+    const [mods, plugins] = await Promise.all([
+      serverApi.fetchServerModCount(currentServer.value),
+      serverApi.fetchServerPluginCount(currentServer.value),
+    ]);
+    store.setModCount(mods);
+    store.setPluginCount(plugins);
+  }
 
-    // 新增一行日志并自动滚动到底部
-    async function appendLog(line: string) {
-        terminalLines.value.push({
-            text: line,
-            level: detectLogLevel(line),
-        })
-        // 限制最大行数，避免内存无限增长
-        if (terminalLines.value.length > 2000) {
-            terminalLines.value.splice(0, terminalLines.value.length - 2000)
-        }
-        // 等 DOM 更新后滚动到底部
-        await nextTick()
-        if (terminalScreenRef.value) {
-            terminalScreenRef.value.scrollTop = terminalScreenRef.value.scrollHeight
-        }
+  // ---------- 玩家信息 ----------
+  // 后端 GetOnlinePlayers / GetMaxPlayers 查询当前活动服务器（无需参数）
+  // 数字直接赋值，不做加载动画
+  const onlinePlayers = ref(0);
+  const maxPlayers = ref(0);
+
+  // 轮询是否激活（本页面可见且有焦点）
+  const isPollingActive = ref(true);
+  let playerTimer: ReturnType<typeof setInterval> | null = null;
+
+  /** 查询一次在线/最大玩家数，直接更新数字 */
+  async function refreshPlayerInfo() {
+    if (!isPollingActive.value) return;
+    if (!hasActiveServer.value) return;
+
+    try {
+      const [online, max] = await Promise.all([
+        GetOnlinePlayers(),
+        GetMaxPlayers(),
+      ]);
+      onlinePlayers.value = online || 0;
+      maxPlayers.value = max || 0;
+    } catch {
+      // 服务器未运行或 Query 未启用：数字清零
+      onlinePlayers.value = 0;
+      maxPlayers.value = 0;
+    }
+  }
+
+  /** 启动玩家轮询（页面可见且有焦点时调用） */
+  function startPlayerPolling() {
+    if (!playerTimer) {
+      refreshPlayerInfo();
+      playerTimer = setInterval(refreshPlayerInfo, 10000);
+    }
+  }
+
+  /** 停止玩家轮询（最小化/切走/失焦时调用） */
+  function stopPlayerPolling() {
+    if (playerTimer) {
+      clearInterval(playerTimer);
+      playerTimer = null;
+    }
+  }
+
+  /** 页面可见性变化：切回可见恢复轮询，隐藏（最小化/切走）停止 */
+  function handleVisibilityChange() {
+    if (document.visibilityState === "visible") {
+      isPollingActive.value = true;
+      startPlayerPolling();
+    } else {
+      isPollingActive.value = false;
+      stopPlayerPolling();
+    }
+  }
+
+  /** 窗口获得焦点：恢复轮询 */
+  function handleWindowFocus() {
+    if (document.visibilityState === "visible") {
+      isPollingActive.value = true;
+      startPlayerPolling();
+    }
+  }
+
+  /** 窗口失去焦点：停止轮询 */
+  function handleWindowBlur() {
+    isPollingActive.value = false;
+    stopPlayerPolling();
+  }
+
+  // ---------- 左侧信息面板 ----------
+  const infoItems = computed(() => [
+    { icon: "cpu", label: "P核-使用率", value: `${cpuUsagePercent.value}%`, color: "#4a9eff" },
+    { icon: "memory", label: "内存使用", value: `${memoryUsagePercent.value}%`, color: "#36cfc9" },
+    {
+      icon: "users",
+      label: "在线玩家",
+      value: `${onlinePlayers.value}/${maxPlayers.value}`,
+      color: "#ffa940",
+    },
+    {
+      icon: "puzzle",
+      label: "模组数量",
+      value: String(modCount.value),
+      color: "#ff6b6b",
+    },
+    {
+      icon: "blocks",
+      label: "插件数量",
+      value: String(pluginCount.value),
+      color: "#b37feb",
+    },
+    {
+      icon: "clock",
+      label: "运行时间",
+      value: formatUptime(uptime.value),
+      color: "#73d13d",
+    },
+  ]);
+
+  // ---------- 终端日志 ----------
+  /**
+   * 新增一行日志并自动滚动到底部
+   * 自动识别日志级别（错误/警告/命令/普通信息）
+   */
+  async function appendLog(line: string) {
+    // 追加前记录是否贴在底部（决定追加后是否自动滚动）
+    const el = terminalScreenRef.value;
+    const stickToBottom = el
+      ? el.scrollHeight - el.scrollTop - el.clientHeight < 40
+      : true;
+
+    // 走 store action，跨路由保留
+    store.appendLog({
+      text: line,
+      level: detectLogLevel(line),
+    });
+
+    // 仅在原本就贴在底部时自动滚动到底部
+    // 用户上翻查看历史时不强制跳底，避免高日志频率下反复触发布局回流
+    await nextTick();
+    if (el && stickToBottom) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }
+
+  /** 接收后端推送的服务器日志 */
+  function handleServerLog(line: string) {
+    appendLog(line);
+  }
+
+  // ---------- Java 配置 ----------
+  /** 从后端扫描系统 Java 列表 */
+  async function loadJavaList() {
+    store.setJavaList(await javaApi.scanJavaList());
+  }
+
+  /** 加载当前服务器已配置的 Java（含不在扫描列表中的自定义 Java） */
+  async function loadServerJava() {
+    if (!currentServer.value) {
+      store.setSelectedJava("");
+      return;
     }
 
-    // 接收后端推送的服务器日志
-    function handleServerLog(line: string) {
-        appendLog(line)
+    const saved = await javaApi.getServerJava(currentServer.value);
+    if (!saved) {
+      store.setSelectedJava("");
+      return;
     }
 
-    // ===== 服务器统计信息 =====
-
-    // 加载当前服务器的 mod 与插件数量（从后端 ServerList.json 的 info 读取）
-    async function loadModCount() {
-        if (!currentServer.value) {
-            modCount.value = 0
-            pluginCount.value = 0
-            return
-        }
-        // 分别获取 mod 与插件数量
-        modCount.value = await serverApi.fetchServerModCount(currentServer.value)
-        pluginCount.value = await serverApi.fetchServerPluginCount(currentServer.value)
+    // 优先从扫描列表中匹配（按 executable 路径）
+    const found = javaList.value.find((j) => j.executable === saved.executable);
+    if (found) {
+      store.setSelectedJava(found.path);
+      return;
     }
 
-    // 接收后端在启动/停止/重启后推送的最新 mod 数量
-    // 事件名：server:modcount
-    function handleModCount(count: number) {
-        modCount.value = count
+    // 自定义 Java：补充到列表末尾并选中
+    store.pushJava({
+      path: saved.path,
+      executable: saved.executable,
+      version: saved.version,
+      versionName: saved.versionName,
+    });
+    store.setSelectedJava(saved.path);
+  }
+
+  /** Java 下拉菜单选项（含"添加自定义 Java"入口） */
+  const javaDropdownOptions = computed<DropdownOption[]>(() => {
+    const options: DropdownOption[] = javaList.value.map((j) => ({
+      label: `${j.path}  (${javaDisplayName(j)})`,
+      key: j.path,
+    }));
+    options.push({
+      label: "添加自定义 Java",
+      key: "__add__",
+    });
+    return options;
+  });
+
+  /** 当前选中 Java 的显示名称 */
+  const selectedJavaDisplay = computed(() => {
+    const found = javaList.value.find((j) => j.path === selectedJava.value);
+    return found ? javaDisplayName(found) : "选择 Java";
+  });
+
+  /**
+   * Java 下拉菜单选择处理
+   * - 选择已有 Java：直接保存
+   * - 选择 "__add__"：打开文件对话框添加自定义 Java
+   */
+  async function handleJavaSelect(key: string | number) {
+    if (!currentServer.value) {
+      message.warning("请先在首页选择当前服务器");
+      return;
     }
 
-    // 接收后端在启动/停止/重启后推送的最新插件数量
-    // 事件名：server:plugincount
-    function handlePluginCount(count: number) {
-        pluginCount.value = count
+    // 添加自定义 Java
+    if (key === "__add__") {
+      const added = await javaApi.addJavaByDialog();
+      if (!added) return; // 用户取消
+
+      await javaApi.setServerJava(currentServer.value, added.executable);
+      await loadJavaList();
+      store.setSelectedJava(added.path);
+      message.success(`已添加 ${javaDisplayName(added)}`);
+      return;
     }
 
-    // 接收后端"是否输入 /version 提取版本"的询问
-    // 事件名：server:askversion，payload 为服务器名
-    // 弹确认框，用户确认后调用后端发送 /version
-    function handleAskVersion(serverName: string) {
-        dialog.warning({
-            title: '检测服务器版本',
-            content: '服务器已超过 10 秒无新日志输出，是否输入 /version 命令以获取版本号？',
-            positiveText: '确认输入',
-            negativeText: '跳过',
-            onPositiveClick: async () => {
-                await processApi.confirmSendVersion(serverName)
-                appendLog('> 已发送 /version 命令')
-            },
-        })
+    // 选择已有 Java
+    store.setSelectedJava(String(key));
+    const found = javaList.value.find((j) => j.path === selectedJava.value);
+    if (found) {
+      const ok = await javaApi.setServerJava(
+        currentServer.value,
+        found.executable,
+      );
+      message[ok ? "success" : "error"](
+        ok ? `已选择 ${javaDisplayName(found)}` : "保存 Java 选择失败",
+      );
+    }
+  }
+
+  // ---------- 内存配置 ----------
+  /** 加载当前服务器的内存配置（后端存储 MB，前端显示 GB） */
+  async function loadServerMemory() {
+    if (!currentServer.value) return;
+    const [xmxMB, xmsMB] = await javaApi.getServerMemory(currentServer.value);
+    if (xmxMB > 0) store.setXmx(xmxMB / 1024);
+    if (xmsMB > 0) store.setXms(xmsMB / 1024);
+  }
+
+  // ---------- 服务器操作 ----------
+  // 进程控制（启动/停止/重启）复用公用函数 useServerControl，
+  // 此处仅保留终端特有的"保存内存配置"与"错误日志回显"逻辑
+  const { startServer, stopServer } = useServerControl();
+
+  // ---------- 按钮配置 ----------
+  const actionButtons = [
+    { label: "开服", type: "primary", icon: "play", action: handleStartServer },
+    { label: "关服", type: "danger", icon: "power", action: handleStopServer },
+    {
+      label: "重启",
+      type: "warning",
+      icon: "rotate",
+      action: handleRestartServer,
+    },
+    {
+      label: "导出日志",
+      type: "default",
+      icon: "file",
+      action: handleExportLog,
+    },
+    {
+      label: "导出错误日志",
+      type: "default",
+      icon: "alert",
+      action: handleExportErrorLog,
+    },
+    {
+      label: "清除控制台",
+      type: "default",
+      icon: "trash",
+      action: handleClearLogs,
+    },
+  ];
+
+  /**
+   * 启动服务器
+   * 自动保存内存配置后调用公用启动函数，失败时在终端显示错误原因；
+   * 启动完成后主动重新拉取 mod/插件数量（后端已扫描并写入 ServerList.json）
+   */
+  async function handleStartServer() {
+    // 保存内存配置（GB → MB）
+    if (currentServer.value) {
+      const xmx = Math.round(xmxGB.value * 1024);
+      const xms = Math.round(xmsGB.value * 1024);
+      await javaApi.setServerMemory(currentServer.value, xmx, xms);
     }
 
-    // ===== Java 配置区域 =====
-
-    // 系统检测到的 Java 列表
-    const javaList = ref<Array<{ path: string; executable: string; version: number; versionName: string }>>([])
-
-    // 当前选中的 Java（保存其安装目录路径）
-    const selectedJava = ref('')
-
-    // 加载系统 Java 列表（Model 层）
-    async function loadJavaList() {
-        javaList.value = await javaApi.scanJavaList()
+    const result = await startServer();
+    if (!result.ok) {
+      appendLog(`[错误] 启动服务器失败：${result.message}`);
     }
+    // 后端启动后已重新扫描 mods/plugins 并写入 JSON，这里拉取最新值刷新面板
+    await loadModCount();
+  }
 
-    // 加载当前服务器已配置的 Java
-    // 后端返回完整 JavaInfo（含版本），即使不在扫描列表中也显示
-    async function loadServerJava() {
-        if (!currentServer.value) {
-            selectedJava.value = ''
-            return
-        }
-        const saved = await javaApi.getServerJava(currentServer.value)
-        if (!saved) {
-            selectedJava.value = ''
-            return
-        }
+  /** 停止服务器，完成后主动重新拉取 mod/插件数量 */
+  async function handleStopServer() {
+    const ok = await stopServer();
+    if (!ok) appendLog("[错误] 停止服务器失败");
+    // 后端停止后已重新扫描 mods/plugins 并写入 JSON，这里拉取最新值刷新面板
+    await loadModCount();
+  }
 
-        // 在扫描列表中找到已保存的 Java（按 executable 匹配）
-        const found = javaList.value.find((j) => j.executable === saved.executable)
-        if (found) {
-            selectedJava.value = found.path
-            return
-        }
+  /** 重启服务器（先停止再启动），完成后数量已在启动步骤末尾刷新 */
+  async function handleRestartServer() {
+    await handleStopServer();
+    await handleStartServer();
+  }
 
-        // 已保存的 Java 不在扫描列表中（如手动添加的自定义路径）
-        // 将其补充进列表，确保下拉框能选中并显示
-        javaList.value.push({
-            path: saved.path,
-            executable: saved.executable,
-            version: saved.version,
-            versionName: saved.versionName,
-        })
-        selectedJava.value = saved.path
+  /** 向运行中的服务器发送控制台命令 */
+  async function sendCommand() {
+    const cmd = commandInput.value.trim();
+    if (!cmd) return;
+
+    commandInput.value = "";
+    const ok = await processApi.sendCommand(cmd);
+    if (!ok) appendLog("[错误] 命令发送失败");
+  }
+
+  // ---------- 工具功能 ----------
+  // CPU/内存使用率由后端周期推送，已搬到 store 以保留跨路由状态
+
+  /** 处理后端推送的 CPU 使用率更新 */
+  function handleCPUUpdate(cpu: SystemInfo) {
+    if (cpu?.usagePercent !== undefined) {
+      store.setCpuUsagePercent(Math.round(cpu.usagePercent));
     }
+  }
 
-    // 下拉菜单选项：所有 Java 路径 + 添加选项
-    const javaDropdownOptions = computed<DropdownOption[]>(() => {
-        const options: DropdownOption[] = javaList.value.map((j) => ({
-            label: `${j.path}  (${javaDisplayName(j)})`,
-            key: j.path,
-        }))
-        options.push({
-            label: '添加自定义 Java',
-            key: '__add__',
-        })
-        return options
-    })
-
-    // 下拉选择处理
-    async function handleJavaSelect(key: string | number) {
-        // 需有活动服务器才能保存 Java 配置
-        if (!currentServer.value) {
-            message.warning('请先在首页选择当前服务器')
-            return
-        }
-
-        // 添加自定义 Java
-        if (key === '__add__') {
-            const added = await javaApi.addJavaByDialog()
-            // 用户取消选择时返回 null
-            if (!added) return
-            // 持久化选中的 Java 到当前服务器并刷新列表
-            await javaApi.setServerJava(currentServer.value, added.executable)
-            await loadJavaList()
-            selectedJava.value = added.path
-            message.success(`已添加 ${javaDisplayName(added)}`)
-            return
-        }
-
-        // 选择已有 Java，找到对应对象并持久化到当前服务器
-        selectedJava.value = String(key)
-        const found = javaList.value.find((j) => j.path === selectedJava.value)
-        if (found) {
-            const ok = await javaApi.setServerJava(currentServer.value, found.executable)
-            message[ok ? 'success' : 'error'](ok ? `已选择 ${javaDisplayName(found)}` : '保存 Java 选择失败')
-        }
+  /** 处理后端推送的内存使用率更新 */
+  function handleMemoryUpdate(mem: SystemInfo) {
+    if (mem?.usagePercent !== undefined) {
+      store.setMemoryUsagePercent(Math.round(mem.usagePercent));
     }
+  }
 
-    // 下拉选中项显示（展示 Java 版本 + 路径）
-    const selectedJavaDisplay = computed(() => {
-        const found = javaList.value.find((j) => j.path === selectedJava.value)
-        if (found) {
-            return javaDisplayName(found)
-        }
-        return '选择 Java'
-    })
+  // ---------- 日志导出与清除 ----------
 
-    // ===== 内存配置（GB 输入，后端存 MB） =====
+  /** 生成导出文件名：服务器名-类型-时间戳.log */
+  function exportFileName(tag: string): string {
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const stamp =
+      `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}` +
+      `-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    return `${currentServer.value || "server"}-${tag}-${stamp}.log`;
+  }
 
-    // 最大/最小内存（GB，前端显示单位）
-    const xmxGB = ref<number>(4)
-    const xmsGB = ref<number>(4)
-
-    // 加载当前服务器的内存配置（后端存 MB，转 GB 显示）
-    async function loadServerMemory() {
-        if (!currentServer.value) return
-        const [xmxMB, xmsMB] = await javaApi.getServerMemory(currentServer.value)
-        if (xmxMB > 0) xmxGB.value = xmxMB / 1024
-        if (xmsMB > 0) xmsGB.value = xmsMB / 1024
+  /** 调用后端保存对话框写文件；成功返回路径，取消/失败返回空串 */
+  async function saveLogFile(fileName: string, content: string): Promise<string> {
+    try {
+      return await SaveLogToFile(fileName, content);
+    } catch {
+      appendLog("[错误] 导出日志失败");
+      return "";
     }
+  }
 
-    // 启动服务器（经过 CPU 检查流程）
-    // 开服前自动保存前端的内存配置，再启动
-    async function handleStartServer() {
-        // 自动保存内存配置（GB → MB）
-        if (currentServer.value) {
-            const xmx = Math.round(xmxGB.value * 1024)
-            const xms = Math.round(xmsGB.value * 1024)
-            await javaApi.setServerMemory(currentServer.value, xmx, xms)
-        }
-        // 启动并接收具体错误信息（如未配置 Java 等）
-        const result = await processApi.startServer(currentServer.value)
-        if (!result.ok) {
-            // 展示后端返回的具体错误原因
-            appendLog(`[错误] 启动服务器失败：${result.message}`)
-        }
+  /** 导出全部日志到文件 */
+  async function handleExportLog() {
+    if (terminalLines.value.length === 0) {
+      appendLog("[提示] 当前没有日志可导出");
+      return;
     }
+    const content = terminalLines.value.map((l) => l.text).join("\n");
+    const path = await saveLogFile(exportFileName("日志"), content);
+    if (path) appendLog(`> 日志已导出: ${path}`);
+  }
 
-    // 停止服务器
-    async function handleStopServer() {
-        const ok = await processApi.stopServer()
-        if (!ok) appendLog('[错误] 停止服务器失败')
+  /** 导出警告与错误日志（过滤 error/warning 级别）到文件 */
+  async function handleExportErrorLog() {
+    const errorLines = terminalLines.value.filter(
+      (l) => l.level === "error" || l.level === "warning",
+    );
+    if (errorLines.length === 0) {
+      appendLog("[提示] 当前没有警告或错误日志");
+      return;
     }
+    const content = errorLines.map((l) => l.text).join("\n");
+    const path = await saveLogFile(exportFileName("错误日志"), content);
+    if (path) appendLog(`> 已导出 ${errorLines.length} 条警告/错误日志: ${path}`);
+  }
 
-    // 发送命令
-    async function sendCommand() {
-        const cmd = commandInput.value.trim()
-        if (!cmd) return
-        commandInput.value = ''
-        const ok = await processApi.sendCommand(cmd)
-        if (!ok) appendLog('[错误] 命令发送失败')
+  /** 清除控制台日志并回到顶部 */
+  function handleClearLogs() {
+    store.clearLogs();
+    if (terminalScreenRef.value) {
+      terminalScreenRef.value.scrollTop = 0;
     }
+  }
 
-    // 右侧按钮（label/type 供模板使用；icon 为图标标识，由模板映射）
-    const actionButtons = [
-        { label: '开服', type: 'primary', icon: 'play', action: handleStartServer },
-        { label: '关服', type: 'danger', icon: 'square', action: handleStopServer },
-        { label: '重启', type: 'warning', icon: 'rotate', action: handleRestartServer },
-        { label: '导出日志', type: 'default', icon: 'file', action: handleExportLog },
-        { label: '导出错误日志', type: 'default', icon: 'alert', action: handleExportErrorLog },
-    ]
+  /** 按钮点击分发 */
+  function handleAction(action?: () => void) {
+    action?.();
+  }
 
-    // 按钮点击分发
-    function handleAction(action?: () => void) {
-        action?.()
-    }
+  // ============================================================
+  //  对外暴露
+  // ============================================================
 
-    // 重启（先停止再启动）
-    async function handleRestartServer() {
-        await handleStopServer()
-        await handleStartServer()
-    }
+  return {
+    // 信息面板
+    infoItems,
 
-    // 导出日志（暂为占位）
-    function handleExportLog() {
-        appendLog('[提示] 导出日志功能待实现')
-    }
+    // 终端
+    terminalLines,
+    terminalScreenRef,
+    commandInput,
 
-    // 导出错误日志（暂为占位）
-    function handleExportErrorLog() {
-        appendLog('[提示] 导出错误日志功能待实现')
-    }
+    // Java 配置
+    selectedJavaDisplay,
+    javaDropdownOptions,
 
-    return {
-        // 状态
-        infoItems,
-        modCount,
-        terminalLines,
-        terminalScreenRef,
-        commandInput,
-        javaList,
-        selectedJava,
-        selectedJavaDisplay,
-        javaDropdownOptions,
-        xmxGB,
-        xmsGB,
-        currentServer,
-        hasActiveServer,
-        // 方法
-        sendCommand,
-        handleAction,
-        handleJavaSelect,
-        actionButtons,
-    }
+    // 内存配置
+    xmxGB,
+    xmsGB,
+
+    // 状态
+    currentServer,
+    hasActiveServer,
+
+    // 方法
+    sendCommand,
+    handleAction,
+    handleJavaSelect,
+    actionButtons,
+  };
 }

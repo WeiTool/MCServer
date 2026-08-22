@@ -9,8 +9,6 @@ type ServerInstance struct {
 	JarFiles   []string `json:"jarFiles"`   // 所有 .jar 文件列表
 	HasEula    bool     `json:"hasEula"`    // 是否有 eula.txt
 	EulaAgreed bool     `json:"eulaAgreed"` // eula.txt 是否已同意
-	IsRunning  bool     `json:"isRunning"`  // 是否正在运行
-	PID        int      `json:"pid"`        // 进程 PID
 }
 
 // ServerListResult 服务器列表查询结果
@@ -38,9 +36,9 @@ type ServerInfo struct {
 	// 服务器类型（Forge/Fabric 等）
 	Type string `json:"type"`
 	// 模组数量
-	ModCount string `json:"modCount"`
+	ModCount int `json:"modCount"`
 	// 插件数量
-	PluginCount string `json:"pluginCount"`
+	PluginCount int `json:"pluginCount"`
 }
 
 // ServerConfigExtra 服务器运行时配置

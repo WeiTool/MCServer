@@ -7,16 +7,16 @@ import (
 	"strings"
 )
 
+// ServersRootOverride 用于测试或特殊场景下覆盖 servers 根目录，如果非空则 GetServersRoot 返回此值
+var ServersRootOverride string
+
 // GetExeDir 获取当前可执行文件所在目录的绝对路径
 // 若获取失败，返回空字符串（调用方需自行处理）
 func GetExeDir() string {
-	// 获取可执行文件绝对路径
 	execPath, err := os.Executable()
 	if err != nil {
-		// 获取失败时返回空字符串，避免返回无效路径
 		return ""
 	}
-	// 返回可执行文件所在目录
 	return filepath.Dir(execPath)
 }
 
@@ -35,13 +35,13 @@ func GetConfigDir() string {
 
 // GetServersRoot 获取 servers 服务器根目录的绝对路径（exe 同级）
 func GetServersRoot() string {
-	// 先取 exe 所在目录
+	if ServersRootOverride != "" {
+		return ServersRootOverride
+	}
 	exeDir := GetExeDir()
 	if exeDir == "" {
-		// exe 目录获取失败，退回相对路径 servers
 		return "servers"
 	}
-	// exe 目录下拼接 servers
 	return filepath.Join(exeDir, "servers")
 }
 

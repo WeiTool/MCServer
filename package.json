@@ -1,6 +1,7 @@
 {
   "dependencies": {
     "@lucide/vue": "^1.31.0",
+    "@vicons/ionicons5": "^0.13.0",
     "echarts": "^6.1.0",
     "naive-ui": "^2.45.0"
   }

@@ -20,7 +20,7 @@ func main() {
 
 	// 固定窗口的逻辑尺寸为 1280x720（常量定义见 window/window.go）
 	// 启动后由 window.SetupWindow 根据 DPI 缩放自适应实际物理像素大小
-	err := wails.Run(&options.App{
+	_ = wails.Run(&options.App{
 		Title:            "MCServer",
 		Width:            window.LogicalWidth,
 		Height:           window.LogicalHeight,
@@ -57,8 +57,4 @@ func main() {
 			IsZoomControlEnabled: false,
 		},
 	})
-
-	if err != nil {
-		println("Error:", err.Error())
-	}
 }
