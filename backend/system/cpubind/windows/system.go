@@ -6,12 +6,16 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"MCServer/backend/utils"
 )
 
 // GetTotalCores 获取总逻辑核心数
 func GetTotalCores() int {
 	psCmd := `(Get-CimInstance -ClassName Win32_ComputerSystem).NumberOfLogicalProcessors`
 	cmd := exec.Command("powershell", "-NoProfile", "-Command", psCmd)
+	// 隐藏窗口：GUI 程序拉起的 powershell 不弹控制台
+	cmd.SysProcAttr = utils.NewHiddenSysProcAttr()
 	output, err := cmd.Output()
 	if err != nil {
 		return 0
@@ -25,6 +29,8 @@ func GetTotalCores() int {
 func getCPUName() string {
 	psCmd := `(Get-CimInstance -ClassName Win32_Processor).Name`
 	cmd := exec.Command("powershell", "-NoProfile", "-Command", psCmd)
+	// 隐藏窗口：GUI 程序拉起的 powershell 不弹控制台
+	cmd.SysProcAttr = utils.NewHiddenSysProcAttr()
 	output, err := cmd.Output()
 	if err != nil {
 		return ""

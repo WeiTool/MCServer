@@ -5,16 +5,12 @@
   align-items: center;
   justify-content: center;
   gap: 12px;
-  height: calc(100vh - 60px);
+  height: calc(100vh - 100px);
   color: #999999;
   background: #ffffff;
   border-radius: 16px;
   border: 1px dashed #d0d0d0;
   margin: 16px;
-}
-
-.console-empty-icon {
-  font-size: 40px;
 }
 
 .console-empty-text {

@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"MCServer/backend/model"
+	"MCServer/backend/utils"
 )
 
 // GCService JVM GC 统计服务
@@ -44,11 +45,13 @@ func (s *GCService) GetStats(pid int) (*model.GcStats, error) {
 		return nil, err
 	}
 
-	out, err := exec.Command(jstat, "-gc", strconv.Itoa(pid)).Output()
+	cmd := exec.Command(jstat, "-gc", strconv.Itoa(pid))
+	// 隐藏窗口：GUI 程序拉起的 jstat 不弹控制台
+	cmd.SysProcAttr = utils.NewHiddenSysProcAttr()
+	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("jstat 查询失败(PID=%d): %v", pid, err)
 	}
-
 	return parseJstatGC(string(out))
 }
 

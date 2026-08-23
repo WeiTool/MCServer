@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"MCServer/backend/model"
+	"MCServer/backend/utils"
 )
 
 // JavaService Java 服务
@@ -110,6 +111,8 @@ func (s *JavaService) detectJava(exePath string) (model.JavaInfo, bool) {
 // getJavaVersion 执行 java.exe -version 获取版本号
 func (s *JavaService) getJavaVersion(exePath string) (string, bool) {
 	cmd := exec.Command(exePath, "-version")
+	// 隐藏窗口：GUI 程序拉起的 java -version 不弹控制台
+	cmd.SysProcAttr = utils.NewHiddenSysProcAttr()
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", false

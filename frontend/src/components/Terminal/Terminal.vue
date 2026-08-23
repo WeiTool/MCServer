@@ -60,7 +60,6 @@ function resolveActionIcon(icon: string) {
 <template>
   <!-- 无活动服务器时的提示 -->
   <div v-if="!hasActiveServer" class="console-empty">
-    <div class="console-empty-icon">⚡</div>
     <span class="console-empty-text">请单击任意服务器为当前服务器</span>
   </div>
 

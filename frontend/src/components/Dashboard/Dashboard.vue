@@ -92,7 +92,6 @@ function resolveInfoIcon(name: string) {
 
         <!-- 无活动服务器时的提示 -->
         <div v-if="!hasActiveServer" class="right-empty">
-            <div class="right-empty-icon">⚡</div>
             <span class="right-empty-text">请单击任意服务器为当前服务器</span>
         </div>
 

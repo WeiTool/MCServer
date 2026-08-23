@@ -6,12 +6,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+
+	"MCServer/backend/utils"
 )
 
 // runJSONList 执行 PowerShell 命令并解析为整数列表
 // 兼容单值和多值两种 JSON 输出格式
 func runJSONList(psCmd string) ([]int, error) {
 	cmd := exec.Command("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", psCmd)
+	// 隐藏窗口：GUI 程序拉起的 powershell 不弹控制台
+	cmd.SysProcAttr = utils.NewHiddenSysProcAttr()
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, err
@@ -57,6 +61,8 @@ func findLowestLoadCore(coreList []int) (int, float64, error) {
 	`
 
 	cmd := exec.Command("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", psCmd)
+	// 隐藏窗口：GUI 程序拉起的 powershell 不弹控制台
+	cmd.SysProcAttr = utils.NewHiddenSysProcAttr()
 	output, err := cmd.Output()
 	if err != nil {
 		return 0, 0, fmt.Errorf("获取负载失败: %v", err)
