@@ -3,37 +3,55 @@
 package windows
 
 import (
-	"fmt"
-	"os/exec"
 	"strings"
+	"unsafe"
 
-	"MCServer/backend/utils"
+	"golang.org/x/sys/windows"
+	"golang.org/x/sys/windows/registry"
 )
 
+var (
+	procGetNativeSystemInfo = windows.NewLazySystemDLL("kernel32.dll").NewProc("GetNativeSystemInfo")
+)
+
+// systemInfo 对应 SYSTEM_INFO 结构（64 位布局）
+type systemInfo struct {
+	oemID                     uint32
+	pageSize                  uint32
+	minimumApplicationAddress uintptr
+	maximumApplicationAddress uintptr
+	activeProcessorMask       uintptr
+	numberOfProcessors        uint32
+	processorType             uint32
+	allocationGranularity     uint32
+	processorLevel            uint16
+	processorRevision         uint16
+}
+
 // GetTotalCores 获取总逻辑核心数
+// 直接调用 kernel32!GetNativeSystemInfo，读取 dwNumberOfProcessors
 func GetTotalCores() int {
-	psCmd := `(Get-CimInstance -ClassName Win32_ComputerSystem).NumberOfLogicalProcessors`
-	cmd := exec.Command("powershell", "-NoProfile", "-Command", psCmd)
-	// 隐藏窗口：GUI 程序拉起的 powershell 不弹控制台
-	cmd.SysProcAttr = utils.NewHiddenSysProcAttr()
-	output, err := cmd.Output()
-	if err != nil {
+	var si systemInfo
+	r, _, _ := procGetNativeSystemInfo.Call(uintptr(unsafe.Pointer(&si)))
+	if r == 0 {
 		return 0
 	}
-	var total int
-	fmt.Sscanf(strings.TrimSpace(string(output)), "%d", &total)
-	return total
+	return int(si.numberOfProcessors)
 }
 
 // getCPUName 获取 CPU 型号名称
+// 直接读取注册表 HKLM\HARDWARE\DESCRIPTION\System\CentralProcessor\0 的
+// ProcessorNameString 值（与 Win32_Processor.Name 同源，无需 WMI）
 func getCPUName() string {
-	psCmd := `(Get-CimInstance -ClassName Win32_Processor).Name`
-	cmd := exec.Command("powershell", "-NoProfile", "-Command", psCmd)
-	// 隐藏窗口：GUI 程序拉起的 powershell 不弹控制台
-	cmd.SysProcAttr = utils.NewHiddenSysProcAttr()
-	output, err := cmd.Output()
+	k, err := registry.OpenKey(registry.LOCAL_MACHINE, `HARDWARE\DESCRIPTION\System\CentralProcessor\0`, registry.QUERY_VALUE)
 	if err != nil {
 		return ""
 	}
-	return strings.TrimSpace(string(output))
+	defer k.Close()
+
+	name, _, err := k.GetStringValue("ProcessorNameString")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(name)
 }

@@ -7,6 +7,7 @@ require (
 	github.com/mcstatus-io/mcutil/v4 v4.1.0
 	github.com/shirou/gopsutil/v3 v3.24.5
 	github.com/wailsapp/wails/v2 v2.14.0
+	golang.org/x/sys v0.47.0
 	golang.org/x/text v0.39.0
 )
 
@@ -43,7 +44,6 @@ require (
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	golang.org/x/crypto v0.53.0 // indirect
 	golang.org/x/net v0.56.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
 )
 
 // replace github.com/wailsapp/wails/v2 v2.14.0 => C:\Users\zbw\go\pkg\mod

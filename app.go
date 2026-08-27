@@ -25,6 +25,8 @@ type App struct {
 	*api.ProcessApi
 	*api.JavaApi
 	*api.ExportApi
+	*api.FileOperationApi
+	*api.VersionApi
 }
 
 // NewApp 创建一个新的 App 应用结构体
@@ -40,12 +42,14 @@ func NewApp() *App {
 	processApi := api.NewProcessApi(store, scanner, gcService)
 
 	return &App{
-		StatusApi:  api.NewStatusApi(processApi, gcService, ioService),
-		ServerApi:  api.NewServerApi(store, scanner),
-		ConfigApi:  api.NewConfigApi(store, javaService),
-		ProcessApi: processApi,
-		JavaApi:    api.NewJavaApi(javaService),
-		ExportApi:  api.NewExportApi(),
+		StatusApi:        api.NewStatusApi(processApi, gcService, ioService),
+		ServerApi:        api.NewServerApi(store, scanner),
+		ConfigApi:        api.NewConfigApi(store, javaService),
+		ProcessApi:       processApi,
+		JavaApi:          api.NewJavaApi(javaService),
+		ExportApi:        api.NewExportApi(),
+		FileOperationApi: api.NewFileOperationApi(),
+		VersionApi:       api.NewVersion(),
 	}
 }
 
@@ -58,9 +62,12 @@ func (a *App) Startup(ctx context.Context) {
 	a.ProcessApi.Startup(ctx)
 	a.JavaApi.Startup(ctx)
 	a.ExportApi.Startup(ctx)
+	a.FileOperationApi.Startup(ctx)
+	a.VersionApi.Startup(ctx)
 
-	// 检测并创建 servers 目录
+	// 检测并创建 servers 与 config 目录
 	a.ensureServersDir()
+	a.ensureConfigDir()
 }
 
 // ensureServersDir 确保 servers 目录存在
@@ -74,4 +81,14 @@ func (a *App) ensureServersDir() {
 	}
 	// 创建目录（权限 0755：rwxr-xr-x）
 	_ = os.MkdirAll(serversPath, 0755)
+}
+
+// ensureConfigDir 确保 config 目录存在（exe 同级）
+// 全局配置（global_config.json 等）统一存放于该目录
+func (a *App) ensureConfigDir() {
+	configPath := utils.GetConfigDir()
+	if configPath == "" {
+		return
+	}
+	_ = os.MkdirAll(configPath, 0755)
 }

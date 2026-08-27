@@ -2,7 +2,9 @@
 
 package utils
 
-import "syscall"
+import (
+	"syscall"
+)
 
 // NewHiddenSysProcAttr 返回隐藏窗口的进程属性
 // GUI 应用（Wails 无控制台）拉起的控制台子进程（powershell/java/jstat）若未设置

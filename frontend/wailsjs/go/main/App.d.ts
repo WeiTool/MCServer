@@ -5,7 +5,19 @@ import {context} from '../models';
 
 export function AddJavaByDialog():Promise<model.JavaInfo>;
 
+export function ApplyPendingUpdate():Promise<void>;
+
+export function CheckVersion():Promise<model.VersionResponse>;
+
+export function CopyJarFile(arg1:string,arg2:string):Promise<model.FileOperationResponse>;
+
+export function DownloadUpdate(arg1:string):Promise<void>;
+
+export function ExtractServerZip(arg1:string,arg2:string):Promise<model.FileOperationResponse>;
+
 export function GetActiveServer():Promise<string>;
+
+export function GetGlobalConfig():Promise<model.GlobalConfig>;
 
 export function GetJvmPid():Promise<number>;
 
@@ -32,6 +44,10 @@ export function GetServerType(arg1:string):Promise<string>;
 export function GetServerUptime():Promise<number>;
 
 export function GetServerVersion(arg1:string):Promise<string>;
+
+export function GetUpdateState():Promise<model.UpdateState>;
+
+export function SaveGlobalConfig(arg1:model.GlobalConfig):Promise<void>;
 
 export function SaveLogToFile(arg1:string,arg2:string):Promise<string>;
 

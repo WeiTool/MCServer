@@ -1,5 +1,33 @@
 export namespace model {
 	
+	export class FileOperationResponse {
+	    success: boolean;
+	    message: string;
+	    path: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new FileOperationResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.success = source["success"];
+	        this.message = source["message"];
+	        this.path = source["path"];
+	    }
+	}
+	export class GlobalConfig {
+	    previewEnabled: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new GlobalConfig(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.previewEnabled = source["previewEnabled"];
+	    }
+	}
 	export class JavaInfo {
 	    path: string;
 	    executable: string;
@@ -75,6 +103,46 @@ export namespace model {
 		    }
 		    return a;
 		}
+	}
+	export class UpdateState {
+	    status: string;
+	    version: string;
+	    error: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new UpdateState(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.status = source["status"];
+	        this.version = source["version"];
+	        this.error = source["error"];
+	    }
+	}
+	export class VersionResponse {
+	    hasUpdate: boolean;
+	    current: string;
+	    latest: string;
+	    assetName: string;
+	    downloadUrl: string;
+	    isBeta: boolean;
+	    isPreview: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new VersionResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.hasUpdate = source["hasUpdate"];
+	        this.current = source["current"];
+	        this.latest = source["latest"];
+	        this.assetName = source["assetName"];
+	        this.downloadUrl = source["downloadUrl"];
+	        this.isBeta = source["isBeta"];
+	        this.isPreview = source["isPreview"];
+	    }
 	}
 
 }

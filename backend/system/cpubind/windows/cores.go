@@ -5,13 +5,58 @@
 package windows
 
 import (
+	"fmt"
+	"sort"
 	"strings"
+	"unsafe"
+
+	"golang.org/x/sys/windows"
+	"golang.org/x/sys/windows/registry"
 )
+
+// 处理器关系类型常量（LOGICAL_PROCESSOR_RELATIONSHIP）
+const (
+	relationProcessorCore = 0 // 物理处理器核心
+)
+
+// kernel32 相关 API
+var (
+	procGetLogicalProcessorInformationEx = windows.NewLazySystemDLL("kernel32.dll").NewProc("GetLogicalProcessorInformationEx")
+)
+
+// groupAffinity 对应 GROUP_AFFINITY 结构
+type groupAffinity struct {
+	mask     uint64
+	group    uint16
+	reserved [3]uint16
+}
+
+// systemLogicalProcessorInformationEx 对应 SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX
+// RelationProcessorCore 时的内存布局（x64，总 48 字节）：
+//   [0..3]    Relationship (uint32)
+//   [4..7]    Size (uint32)
+//   [8]       Flags (byte)
+//   [9]       EfficiencyClass (byte) — 数值越大代表性能等级越高
+//   [10..29]  Reserved (20 字节)
+//   [30..31]  GroupCount (uint16)
+//   [32..39]  GroupMask[0].Mask (uint64)
+//   [40..47]  GroupMask[0].Group + 保留
+// 与 Microsoft 头文件一致：PROCESSOR_RELATIONSHIP 中 GROUP_AFFINITY
+// 按 8 字节对齐，紧随 GroupCount 之后。
+type systemLogicalProcessorInformationEx struct {
+	relationship    uint32
+	size            uint32
+	flags           byte
+	efficiencyClass byte
+	reserved        [20]byte
+	groupCount      uint16
+	groupMask       groupAffinity
+}
 
 // GetPerformanceCores 获取性能核心(P-Core)编号列表
 // 采用四级策略（从高到低准确率），任一步命中即返回：
-//  1. 调用 GetLogicalProcessorInformationEx API（通过 PowerShell + C# 互操作）
-//     读取每颗逻辑核的 EfficiencyClass：0=P 1=E
+//  1. 调用 GetLogicalProcessorInformationEx API 读取每颗逻辑核的
+//     EfficiencyClass：0=P 1=E
 //  2. 注册表 EfficientClass（兼容老系统/部分机型）
 //  3. 基于 CPU 型号硬编码 + 已知消费级/服务器级 CPU 家族推断
 //  4. 最终回退 - 全部逻辑核心
@@ -43,132 +88,100 @@ func GetPerformanceCores() ([]int, error) {
 	return cores, nil
 }
 
-// getCoresFromProcessorInfo 通过 PowerShell + 嵌入式 C# 调用
-// kernel32!GetLogicalProcessorInformationEx，读取 RelationProcessorCore
-// 结构中的 EfficiencyClass 来区分 P/E 核。
+// getCoresFromProcessorInfo 直接调用 kernel32!GetLogicalProcessorInformationEx，
+// 读取 RelationProcessorCore 结构中的 EfficiencyClass 来区分 P/E 核。
 //
 // EfficiencyClass 语义：数值越大代表性能/效率等级越高（由 Windows 报告），
 // 典型 Intel ADL/RPL：EffClass=1 是 P-Core、EffClass=0 是 E-Core。
 // AMD/服务器/纯 P 核平台：所有核 EffClass 相同，整体视为全 P。
 // 做法：取所有核里出现的最大 EffClass，标记对应逻辑核为 P-Core。
 func getCoresFromProcessorInfo() ([]int, error) {
-	psCmd := `
-	$csSource = @'
-using System;
-using System.Collections.Generic;
-using System.Runtime.InteropServices;
-
-public static class CoreDetector {
-	private const int RelationProcessorCore = 0;
-
-	// 显式布局：基于实测单组处理器下 SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX
-	// 大小=48 字节（Relationship=ProcessorCore, GroupCount=1）。
-	//   [0..3]   Relationship (int)
-	//   [4..7]   Size (uint)
-	//   [8]      Flags (byte)
-	//   [9]      EfficiencyClass (byte)  — 数值越大代表越"高性能"
-	//   [10..29] Reserved (20 字节)
-	//   [30..31] GroupCount (ushort)
-	//   [32..39] GroupAffinity.Mask (KAFFINITY, ulong)
-	//   [40..47] GroupAffinity.Group + 保留
-	[StructLayout(LayoutKind.Explicit, Size = 48)]
-	private struct ENTRY {
-		[FieldOffset(0)]  public int Relationship;
-		[FieldOffset(4)]  public uint Size;
-		[FieldOffset(9)]  public byte EfficiencyClass;
-		[FieldOffset(30)] public ushort GroupCount;
-		[FieldOffset(32)] public ulong Mask;
+	// 首次调用查询所需缓冲区长度（buffer 传 NULL 必然失败，属正常，length 被填充）
+	var length uint32
+	procGetLogicalProcessorInformationEx.Call(
+		uintptr(relationProcessorCore), 0, uintptr(unsafe.Pointer(&length)))
+	if length == 0 {
+		return nil, fmt.Errorf("GetLogicalProcessorInformationEx 查询长度失败")
 	}
 
-	[DllImport("kernel32.dll", SetLastError = true)]
-	private static extern bool GetLogicalProcessorInformationEx(
-		int RelationshipType, IntPtr Buffer, ref uint ReturnedLength);
+	buf := make([]byte, length)
+	r, _, _ := procGetLogicalProcessorInformationEx.Call(
+		uintptr(relationProcessorCore),
+		uintptr(unsafe.Pointer(&buf[0])),
+		uintptr(unsafe.Pointer(&length)))
+	if r == 0 {
+		return nil, fmt.Errorf("GetLogicalProcessorInformationEx 调用失败")
+	}
 
-	public static int[] GetPerformanceLogicalProcessors() {
-		uint len = 0;
-		GetLogicalProcessorInformationEx(RelationProcessorCore, IntPtr.Zero, ref len);
-		if (len == 0) return new int[0];
+	// 第一步：收集所有物理核条目，记录其 EffClass + 归属的逻辑 CPU
+	cpuEffClass := make(map[int]byte)
+	maxEffClass := byte(0)
 
-		IntPtr buf = Marshal.AllocHGlobal((int)len);
-		try {
-			if (!GetLogicalProcessorInformationEx(RelationProcessorCore, buf, ref len)) {
-				return new int[0];
+	offset := 0
+	for offset < int(length) {
+		info := (*systemLogicalProcessorInformationEx)(unsafe.Pointer(&buf[offset]))
+		if info.relationship == relationProcessorCore {
+			if info.efficiencyClass > maxEffClass {
+				maxEffClass = info.efficiencyClass
 			}
-
-			// 第一步：收集所有物理核条目，记录其 EffClass + 归属的逻辑 CPU
-			// Key = 逻辑 CPU 编号，Value = 其所属的 EffClass
-			var cpuEffClass = new Dictionary<int, byte>();
-			byte maxEffClass = 0;
-
-			long offset = buf.ToInt64();
-			long end    = offset + len;
-			while (offset < end) {
-				IntPtr cur = new IntPtr(offset);
-				var info = (ENTRY)Marshal.PtrToStructure(cur, typeof(ENTRY));
-
-				if (info.Relationship == RelationProcessorCore) {
-					if (info.EfficiencyClass > maxEffClass) maxEffClass = info.EfficiencyClass;
-					ulong mask = info.Mask;
-					for (int i = 0; i < 64; i++) {
-						if ((mask & (1UL << i)) != 0) cpuEffClass[i] = info.EfficiencyClass;
-					}
+			mask := info.groupMask.mask
+			for i := 0; i < 64; i++ {
+				if mask&(1<<uint(i)) != 0 {
+					cpuEffClass[i] = info.efficiencyClass
 				}
-
-				if (info.Size == 0) break;
-				offset += info.Size;
 			}
+		}
+		if info.size == 0 {
+			break
+		}
+		offset += int(info.size)
+	}
 
-			// 第二步：选择 EffClass 等于最大等级的逻辑 CPU 作为 P-Core
-			var pCores = new List<int>();
-			foreach (var kv in cpuEffClass) {
-				if (kv.Value == maxEffClass) pCores.Add(kv.Key);
-			}
-			pCores.Sort();
-			return pCores.ToArray();
-		} finally {
-			Marshal.FreeHGlobal(buf);
+	// 第二步：选择 EffClass 等于最大等级的逻辑 CPU 作为 P-Core
+	pCores := make([]int, 0, len(cpuEffClass))
+	for cpu, eff := range cpuEffClass {
+		if eff == maxEffClass {
+			pCores = append(pCores, cpu)
 		}
 	}
-}
-'@
-
-	Add-Type -TypeDefinition $csSource -Language CSharp -ErrorAction Stop
-	[CoreDetector]::GetPerformanceLogicalProcessors() | ConvertTo-Json
-`
-	return runJSONList(psCmd)
+	sort.Ints(pCores)
+	return pCores, nil
 }
 
-// getCoresFromRegistry 通过 PowerShell 读取注册表 EfficientClass 识别 P-Core
+// getCoresFromRegistry 直接读取注册表 EfficientClass 识别 P-Core
 // 与 GetLogicalProcessorInformationEx 保持一致：取 EfficientClass 最大值的核为 P-Core
 func getCoresFromRegistry() ([]int, error) {
-	psCmd := `
-		$coresMap = @{}
-		$index = 0
-		$maxClass = 0
-		while ($true) {
-			$path = "HKLM:\HARDWARE\DESCRIPTION\System\CentralProcessor\$index"
-			try {
-				$class = (Get-ItemProperty -Path $path -Name "EfficientClass" -ErrorAction Stop).EfficientClass
-				$coresMap[$index] = [int]$class
-				if ([int]$class -gt $maxClass) { $maxClass = [int]$class }
-			} catch {
-				break
-			}
-			$index++
-		}
+	coresMap := make(map[int]int)
+	maxClass := 0
 
-		$pCores = @()
-		foreach ($key in $coresMap.Keys) {
-			if ([int]$coresMap[$key] -eq $maxClass) { $pCores += [int]$key }
+	for index := 0; ; index++ {
+		path := fmt.Sprintf(`HARDWARE\DESCRIPTION\System\CentralProcessor\%d`, index)
+		k, err := registry.OpenKey(registry.LOCAL_MACHINE, path, registry.QUERY_VALUE)
+		if err != nil {
+			break // 没有更多 CPU 条目
 		}
-		if ($pCores.Count -gt 0) {
-			$pCores = ($pCores | Sort-Object)
-			$pCores | ConvertTo-Json
-		} else {
-			ConvertTo-Json @()
+		class, _, err := k.GetIntegerValue("EfficientClass")
+		k.Close()
+		if err != nil {
+			break
 		}
-	`
-	return runJSONList(psCmd)
+		coresMap[index] = int(class)
+		if int(class) > maxClass {
+			maxClass = int(class)
+		}
+	}
+
+	pCores := make([]int, 0, len(coresMap))
+	for core, class := range coresMap {
+		if class == maxClass {
+			pCores = append(pCores, core)
+		}
+	}
+	if len(pCores) == 0 {
+		return nil, fmt.Errorf("注册表未找到 EfficientClass")
+	}
+	sort.Ints(pCores)
+	return pCores, nil
 }
 
 // getCoresFallback 基于已知 CPU 型号推断性能核心

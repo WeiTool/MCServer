@@ -1,8 +1,10 @@
 package main
 
 import (
+	"MCServer/backend/service"
 	"context"
 	"embed"
+	"encoding/json"
 
 	"MCServer/window"
 
@@ -14,6 +16,25 @@ import (
 
 //go:embed all:frontend/dist
 var assets embed.FS
+
+//go:embed wails.json
+var wailsConfig []byte
+
+// wailsConfigInfo 对应 wails.json 中的 info 字段（只解析需要的 productVersion）
+type wailsConfigInfo struct {
+	Info struct {
+		ProductVersion string `json:"productVersion"`
+	} `json:"info"`
+}
+
+// init 从嵌入的 wails.json 读取版本号注入 server 包
+// 版本单一来源：wails.json 的 info.productVersion，改版只改这一处
+func init() {
+	var cfg wailsConfigInfo
+	if err := json.Unmarshal(wailsConfig, &cfg); err == nil {
+		service.SetCurrentVersion(cfg.Info.ProductVersion)
+	}
+}
 
 func main() {
 	app := NewApp()
@@ -46,10 +67,16 @@ func main() {
 		OnBeforeClose: func(ctx context.Context) bool {
 			// 关闭 APP 前停止所有正在运行的服务器进程
 			app.ProcessApi.ShutdownAll()
+			// 若存在待执行的更新（config/update.json 为 pending），启动替换脚本
+			app.VersionApi.ApplyPendingUpdate()
 			return false
 		},
 		Bind: []interface{}{
 			app,
+		},
+		DragAndDrop: &options.DragAndDrop{
+			// 启用文件拖放：拖入文件时 Wails 会解析绝对路径并通过 OnFileDrop 回调返回
+			EnableFileDrop: true,
 		},
 		Windows: &windows.Options{
 			// 禁用 WebView 的手势缩放，避免界面被意外缩放导致模糊

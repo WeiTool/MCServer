@@ -1,33 +1,46 @@
 <script setup lang="ts">
 // 模板所需图标（图标仅用于展示，在组件内维护字符串 → 图标组件映射）
-import { Puzzle, Blocks, List, AlarmClock, Gamepad, Power, RotateCw, Play, TerminalSquare, Folder, RefreshCw, Server, User } from '@lucide/vue'
+import { Puzzle, Blocks, List, AlarmClock, Gamepad, Power, RotateCw, Play, TerminalSquare, Folder, RefreshCw, Server, User, Plus } from '@lucide/vue'
 import GaugeChart from '../base/GaugeChart/GaugeChart.vue'
 import GcChart from '../base/GcChart/GcChart.vue'
 import IoChart from '../base/IoChart/IoChart.vue'
-// ViewModel：首页看板逻辑
+// ViewModel：首页看板逻辑（含拖拽添加服务器，拖放监听注册在 useFileDrop 内部）
 import { useDashboard } from './Dashboard'
 
 const {
+    // 系统状态
     memoryUsagePercent,
     CPUUsagePercent,
     jvmMemoryUsagePercent,
     ioReadMBps,
     ioWriteMBps,
+
+    // 服务器列表与选择
     serverList,
     currentServer,
     hasActiveServer,
+
+    // 信息面板（统一数据驱动）
+    infoItems,
+
+    // GC 折线图数据
+    gcPoints,
+
+    // 玩家数据
+    playerList,
+    isLoadingPlayers,
+    isProcessing,
+
+    // 操作方法
     goToConsole,
     loadServerList,
     setActiveServer,
     handleStart,
     handleStop,
     handleRestart,
-    infoItems,
-    gcPoints,
-    playerList,
-    isLoadingPlayers,
     refreshPlayerList,
 } = useDashboard()
+
 
 // 左侧信息面板图标映射（字符串 → 组件）
 const infoIconMap: Record<string, any> = {
@@ -91,8 +104,9 @@ function resolveInfoIcon(name: string) {
         </div>
 
         <!-- 无活动服务器时的提示 -->
-        <div v-if="!hasActiveServer" class="right-empty">
-            <span class="right-empty-text">请单击任意服务器为当前服务器</span>
+        <div v-if="!hasActiveServer" class="right-empty wails-drop-target" style="--wails-drop-target: drop">
+            <span class="right-empty-text" v-if="isProcessing">正在处理文件，请稍候...</span>
+            <span class="right-empty-text" v-else>拖拽压缩包或jar文件到此处</span>
         </div>
 
         <!-- 右侧区域：仅在存在活动服务器时显示 -->
@@ -152,24 +166,32 @@ function resolveInfoIcon(name: string) {
                 </div>
             </div>
 
-            <!-- 按钮卡片 -->
-            <div class="button-card">
-                <button class="action-btn" @click="handleStart">
-                    <Play :size="18" />
-                    开启
-                </button>
-                <button class="action-btn" @click="handleRestart">
-                    <RotateCw :size="18" />
-                    重启
-                </button>
-                <button class="action-btn" @click="handleStop">
-                    <Power :size="18" />
-                    停止
-                </button>
-                <button class="action-btn" @click="goToConsole">
-                    <TerminalSquare :size="18" />
-                    控制台
-                </button>
+            <!-- 按钮卡片 + 添加服务器（拖拽解压） -->
+            <div class="button-box">
+                <div class="button-card">
+                    <button class="action-btn" @click="handleStart">
+                        <Play :size="18" />
+                        开启
+                    </button>
+                    <button class="action-btn" @click="handleRestart">
+                        <RotateCw :size="18" />
+                        重启
+                    </button>
+                    <button class="action-btn" @click="handleStop">
+                        <Power :size="18" />
+                        停止
+                    </button>
+                    <button class="action-btn" @click="goToConsole">
+                        <TerminalSquare :size="18" />
+                        控制台
+                    </button>
+                </div>
+                <!-- 添加服务器 drop 目标：拖入 jar 复制 / 压缩包解压为新服务器 -->
+                <div class="add-card wails-drop-target" style="--wails-drop-target: drop">
+                    <Plus :size="18" class="add-card-icon" />
+                    <span>拖入压缩包或jar</span>
+                    <span>添加新服务器</span>
+                </div>
             </div>
         </div>
     </div>

@@ -9,5 +9,8 @@
   "author": {
     "name": "WeiTool",
     "email": "475288481@qq.com"
+  },
+  "info": {
+    "productVersion": "0.0.1"
   }
 }

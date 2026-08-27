@@ -51,6 +51,10 @@ func GetServerFolderPath(serverName string) string {
 	return filepath.Join(GetServersRoot(), serverName)
 }
 
+func GetCacheDir() string {
+	return filepath.Join(GetExeDir(), "cache")
+}
+
 // IsJarFile 判断文件名是否为 .jar 文件（不区分大小写）
 // 用于统一识别 Minecraft 服务端 jar、mod、插件文件
 func IsJarFile(fileName string) bool {

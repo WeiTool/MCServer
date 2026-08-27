@@ -11,6 +11,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AppInit: typeof import('./components/AppInit.vue')['default']
     Dashboard: typeof import('./components/Dashboard/Dashboard.vue')['default']
     GaugeChart: typeof import('./components/base/GaugeChart/GaugeChart.vue')['default']
     GcChart: typeof import('./components/base/GcChart/GcChart.vue')['default']
@@ -19,6 +20,7 @@ declare module 'vue' {
     NButton: typeof import('naive-ui')['NButton']
     NDescriptions: typeof import('naive-ui')['NDescriptions']
     NDescriptionsItem: typeof import('naive-ui')['NDescriptionsItem']
+    NDialogProvider: typeof import('naive-ui')['NDialogProvider']
     NDropdown: typeof import('naive-ui')['NDropdown']
     NEmpty: typeof import('naive-ui')['NEmpty']
     NH3: typeof import('naive-ui')['NH3']
@@ -28,13 +30,16 @@ declare module 'vue' {
     NLayoutSider: typeof import('naive-ui')['NLayoutSider']
     NMenu: typeof import('naive-ui')['NMenu']
     NMessageProvider: typeof import('naive-ui')['NMessageProvider']
+    NNotificationProvider: typeof import('naive-ui')['NNotificationProvider']
     NSelect: typeof import('naive-ui')['NSelect']
     NSpace: typeof import('naive-ui')['NSpace']
     NSpin: typeof import('naive-ui')['NSpin']
     NSwitch: typeof import('naive-ui')['NSwitch']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    ServerProperties: typeof import('./components/Settings/ServerProperties/ServerProperties.vue')['default']
     Settings: typeof import('./components/Settings/settings.vue')['default']
     Terminal: typeof import('./components/Terminal/Terminal.vue')['default']
+    UpdateSettings: typeof import('./components/Settings/UpdateSettings.vue')['default']
   }
 }

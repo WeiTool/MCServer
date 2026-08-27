@@ -6,8 +6,32 @@ export function AddJavaByDialog() {
   return window['go']['main']['App']['AddJavaByDialog']();
 }
 
+export function ApplyPendingUpdate() {
+  return window['go']['main']['App']['ApplyPendingUpdate']();
+}
+
+export function CheckVersion() {
+  return window['go']['main']['App']['CheckVersion']();
+}
+
+export function CopyJarFile(arg1, arg2) {
+  return window['go']['main']['App']['CopyJarFile'](arg1, arg2);
+}
+
+export function DownloadUpdate(arg1) {
+  return window['go']['main']['App']['DownloadUpdate'](arg1);
+}
+
+export function ExtractServerZip(arg1, arg2) {
+  return window['go']['main']['App']['ExtractServerZip'](arg1, arg2);
+}
+
 export function GetActiveServer() {
   return window['go']['main']['App']['GetActiveServer']();
+}
+
+export function GetGlobalConfig() {
+  return window['go']['main']['App']['GetGlobalConfig']();
 }
 
 export function GetJvmPid() {
@@ -60,6 +84,14 @@ export function GetServerUptime() {
 
 export function GetServerVersion(arg1) {
   return window['go']['main']['App']['GetServerVersion'](arg1);
+}
+
+export function GetUpdateState() {
+  return window['go']['main']['App']['GetUpdateState']();
+}
+
+export function SaveGlobalConfig(arg1) {
+  return window['go']['main']['App']['SaveGlobalConfig'](arg1);
 }
 
 export function SaveLogToFile(arg1, arg2) {
