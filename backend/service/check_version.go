@@ -2,6 +2,7 @@ package service
 
 import (
 	"MCServer/backend/model"
+	"MCServer/backend/storage"
 	"MCServer/backend/utils"
 	"encoding/json"
 	"fmt"
@@ -315,7 +316,7 @@ func atoiOrZero(s string) int {
 func CheckVersion() (model.VersionResponse, error) {
 	resp := model.VersionResponse{Current: currentAppVersion}
 
-	cfg, err := GetGlobalConfig()
+	cfg, err := storage.GetGlobalConfig()
 	if err != nil {
 		return resp, err
 	}

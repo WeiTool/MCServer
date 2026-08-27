@@ -3,6 +3,7 @@ package api
 import (
 	"MCServer/backend/model"
 	"MCServer/backend/service"
+	"MCServer/backend/storage"
 	"context"
 )
 
@@ -42,10 +43,10 @@ func (api *VersionApi) ApplyPendingUpdate() error {
 
 // GetGlobalConfig 读取全局配置（config/global_config.json）
 func (api *VersionApi) GetGlobalConfig() (model.GlobalConfig, error) {
-	return service.GetGlobalConfig()
+	return storage.GetGlobalConfig()
 }
 
 // SaveGlobalConfig 保存全局配置（config/global_config.json）
 func (api *VersionApi) SaveGlobalConfig(cfg model.GlobalConfig) error {
-	return service.SaveGlobalConfig(cfg)
+	return storage.SaveGlobalConfig(cfg)
 }
